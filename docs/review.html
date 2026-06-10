@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Review Portal with GitHub Issues</title>
+    <title>Del Medical - PDF Review Portal</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <style>
         :root {
             --bg: #0d1117;
@@ -14,174 +15,328 @@
             --muted: #8b949e;
             --accent: #58a6ff;
             --green: #3fb950;
+            --yellow: #d2991d;
             --red: #f85149;
+            --purple: #a371f7;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
         
-        /* Toolbar */
-        #toolbar {
-            padding: 12px 24px;
+        /* Top Navigation Bar */
+        #navbar {
+            display: flex;
+            align-items: center;
+            padding: 10px 20px;
             background: var(--surface);
             border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            flex-shrink: 0;
-        }
-        #toolbar h1 { font-size: 1.2rem; font-weight: 600; color: var(--text); }
-        #toolbar .badge { background: var(--accent); color: #000; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
-        #status { margin-left: auto; font-size: 0.85rem; color: var(--muted); }
-        
-        /* Main layout */
-        #main { display: flex; flex: 1; overflow: hidden; }
-        
-        /* PDF Viewer */
-        #viewer {
-            flex: 1;
-            overflow-y: auto;
-            background: #525659;
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
             gap: 16px;
+            flex-shrink: 0;
+            z-index: 10;
         }
-        .page-wrapper {
-            position: relative;
-            cursor: pointer;
-            transition: transform 0.15s ease;
+        #navbar .logo { font-weight: 700; font-size: 1.1rem; color: var(--accent); white-space: nowrap; }
+        #navbar .breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85rem;
+            color: var(--muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
-        .page-wrapper:hover { transform: scale(1.01); }
-        .page-wrapper.selected canvas { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
-        canvas { display: block; box-shadow: 0 8px 24px rgba(0,0,0,0.6); border-radius: 4px; }
-        .page-label {
-            text-align: center;
-            color: #ccc;
-            font-size: 0.8rem;
-            margin-top: 6px;
-            user-select: none;
+        #navbar .breadcrumb span { color: var(--text); }
+        #navbar .breadcrumb .sep { color: var(--border); }
+        #navbar .spacer { flex: 1; }
+        
+        /* Main Layout */
+        #main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
         }
         
-        /* Sidebar */
-        #sidebar {
-            width: 420px;
+        /* Left Panel: File Browser */
+        #browser-panel {
+            width: 340px;
+            min-width: 340px;
             background: var(--surface);
-            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
-            flex-shrink: 0;
+            overflow: hidden;
+            transition: width 0.3s, min-width 0.3s;
         }
-        #sidebar-header {
-            padding: 16px 20px;
+        #browser-panel.collapsed { width: 0; min-width: 0; }
+        #browser-header {
+            padding: 12px 16px;
             border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-shrink: 0;
         }
-        #sidebar-header h2 { font-size: 1rem; font-weight: 600; }
-        #comments-container { flex: 1; overflow-y: auto; padding: 16px; }
+        #browser-header h3 { font-size: 0.9rem; font-weight: 600; }
+        #search-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.85rem;
+            margin: 8px 12px;
+            flex-shrink: 0;
+        }
+        #search-input:focus { outline: none; border-color: var(--accent); }
+        #file-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 4px 0;
+        }
+        .folder-item, .file-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            gap: 8px;
+            transition: background 0.1s;
+            border-left: 3px solid transparent;
+        }
+        .folder-item:hover, .file-item:hover { background: var(--bg); }
+        .file-item.active { background: #1f6feb22; border-left-color: var(--accent); }
+        .file-item .icon, .folder-item .icon { font-size: 1.1rem; flex-shrink: 0; }
+        .file-item .name, .folder-item .name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .file-item .badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 8px;
+            font-weight: 600;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+        .badge-draft { background: #d2991d22; color: var(--yellow); }
+        .badge-release { background: #3fb95022; color: var(--green); }
+        .loading-indicator {
+            text-align: center;
+            padding: 20px;
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
         
-        .comment-card {
+        /* Toggle button for browser panel */
+        #toggle-browser {
+            background: none;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 4px 8px;
+        }
+        #toggle-browser:hover { color: var(--text); }
+        
+        /* Right: PDF Viewer + Annotations */
+        #viewer-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        /* Annotation Toolbar */
+        #annotation-toolbar {
+            display: flex;
+            align-items: center;
+            padding: 8px 16px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            gap: 8px;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .tool-group {
+            display: flex;
+            gap: 2px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .tool-btn {
+            background: var(--bg);
+            border: none;
+            color: var(--text);
+            padding: 6px 12px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.1s;
+            white-space: nowrap;
+        }
+        .tool-btn:hover { background: var(--border); }
+        .tool-btn.active { background: var(--accent); color: #000; font-weight: 600; }
+        .tool-btn .icon { margin-right: 4px; }
+        .color-btn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .color-btn.selected { border-color: white; box-shadow: 0 0 0 2px var(--accent); }
+        
+        /* PDF Canvas Area */
+        #pdf-scroll-container {
+            flex: 1;
+            overflow-y: auto;
+            background: #333;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            gap: 16px;
+        }
+        .page-container {
+            position: relative;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+            background: white;
+            flex-shrink: 0;
+        }
+        .page-container canvas { display: block; }
+        .page-label-overlay {
+            position: absolute;
+            bottom: 8px;
+            right: 12px;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            pointer-events: none;
+        }
+        
+        /* Annotation Canvas (fabric.js) */
+        .annotation-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: auto;
+        }
+        
+        /* Text Selection Quote Button */
+        #quote-popup {
+            position: absolute;
+            background: var(--surface);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            z-index: 100;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            color: var(--text);
+        }
+        #quote-popup:hover { background: var(--accent); color: #000; }
+        
+        /* Sidebar for annotations/comments */
+        #annotation-sidebar {
+            width: 380px;
+            min-width: 380px;
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: width 0.3s, min-width 0.3s;
+        }
+        #annotation-sidebar.collapsed { width: 0; min-width: 0; }
+        #annotation-sidebar-header {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        #annotation-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .annotation-card {
             background: var(--bg);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 14px;
-            margin-bottom: 12px;
-            transition: border-color 0.2s;
+            padding: 12px;
+            font-size: 0.85rem;
             cursor: pointer;
+            transition: border-color 0.15s;
         }
-        .comment-card:hover { border-color: var(--accent); }
-        .comment-header {
+        .annotation-card:hover { border-color: var(--accent); }
+        .annotation-card .ann-header {
             display: flex;
             align-items: center;
             gap: 8px;
-            margin-bottom: 8px;
-            font-size: 0.8rem;
+            margin-bottom: 6px;
+            font-size: 0.75rem;
             color: var(--muted);
         }
-        .comment-header .page-badge {
-            background: #1f6feb33;
-            color: var(--accent);
-            padding: 2px 10px;
-            border-radius: 12px;
+        .annotation-card .ann-type {
+            padding: 2px 6px;
+            border-radius: 4px;
             font-weight: 600;
-        }
-        .comment-header .author { font-weight: 600; color: var(--text); }
-        .comment-body { font-size: 0.9rem; line-height: 1.5; color: var(--text); }
-        .comment-footer { margin-top: 8px; font-size: 0.75rem; color: var(--muted); display: flex; gap: 12px; }
-        .comment-footer a { color: var(--accent); text-decoration: none; }
-        .comment-footer a:hover { text-decoration: underline; }
-        
-        .status-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
             font-size: 0.7rem;
-            font-weight: 600;
         }
-        .status-open { background: #3fb95033; color: var(--green); }
-        .status-closed { background: #f8514933; color: var(--red); }
-        
-        .empty-state {
-            text-align: center;
+        .ann-type-highlight { background: #d2991d22; color: var(--yellow); }
+        .ann-type-quote { background: #a371f722; color: var(--purple); }
+        .ann-type-drawing { background: #58a6ff22; color: var(--accent); }
+        .ann-type-comment { background: #3fb95022; color: var(--green); }
+        .annotation-card .ann-body {
+            line-height: 1.5;
+            color: var(--text);
+        }
+        .annotation-card .ann-body blockquote {
+            border-left: 3px solid var(--purple);
+            margin: 6px 0;
+            padding-left: 10px;
             color: var(--muted);
-            padding: 40px 20px;
-            font-size: 0.9rem;
-            line-height: 1.6;
+            font-style: italic;
         }
-        .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; }
+        .annotation-card .ann-footer {
+            margin-top: 8px;
+            display: flex;
+            gap: 12px;
+            font-size: 0.7rem;
+            color: var(--muted);
+        }
         
-        /* Comment form */
-        #comment-form {
-            padding: 16px 20px;
-            border-top: 1px solid var(--border);
-            display: none;
+        #no-pdf-message {
+            flex: 1;
+            display: flex;
             flex-direction: column;
-            gap: 10px;
+            align-items: center;
+            justify-content: center;
+            color: var(--muted);
+            text-align: center;
+            padding: 40px;
         }
-        #comment-form.visible { display: flex; }
-        #comment-form label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
-        #comment-form textarea {
-            width: 100%;
-            padding: 10px 12px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text);
-            font-family: inherit;
-            font-size: 0.9rem;
-            resize: vertical;
-            min-height: 80px;
-        }
-        #comment-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px #1f6feb44; }
-        #author-input {
-            padding: 6px 12px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            color: var(--text);
-            font-size: 0.85rem;
-        }
-        .btn-row { display: flex; gap: 8px; align-items: center; }
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.15s;
-        }
-        .btn-primary { background: var(--green); color: #000; }
-        .btn-primary:hover { background: #2ea043; }
-        .btn-primary:disabled { background: #3fb95055; color: #3fb95088; cursor: not-allowed; }
-        .btn-secondary { background: var(--border); color: var(--text); }
-        .btn-secondary:hover { background: #484f58; }
-        .btn-danger { background: transparent; color: var(--red); padding: 4px 8px; font-size: 0.75rem; }
-        
-        #loading-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin 0.6s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        #no-pdf-message .icon { font-size: 4rem; margin-bottom: 16px; }
         
         /* Toast */
         #toast {
@@ -193,400 +348,885 @@
             padding: 12px 20px;
             border-radius: 8px;
             font-size: 0.85rem;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
             transform: translateY(120px);
             opacity: 0;
             transition: all 0.3s ease;
-            z-index: 100;
+            z-index: 1000;
         }
         #toast.show { transform: translateY(0); opacity: 1; }
         #toast.error { border-color: var(--red); color: var(--red); }
         #toast.success { border-color: var(--green); color: var(--green); }
+        
+        /* Responsive */
+        @media (max-width: 1200px) {
+            #browser-panel { width: 260px; min-width: 260px; }
+            #annotation-sidebar { width: 300px; min-width: 300px; }
+        }
     </style>
 </head>
 <body>
-    <div id="toolbar">
-        <h1>📄 <span id="doc-title">Draft Review</span></h1>
-        <span class="badge" id="issue-count">0 comments</span>
-        <span id="status">🟢 Connected</span>
+    <!-- Navigation Bar -->
+    <div id="navbar">
+        <span class="logo">📄 Del Medical PDF Review</span>
+        <span class="sep" style="color:var(--border);">|</span>
+        <div class="breadcrumb" id="breadcrumb">
+            <span>DelMedicalRelease</span>
+        </div>
+        <span class="spacer"></span>
+        <button id="toggle-browser" title="Toggle file browser">📁</button>
+        <button id="toggle-annotations" title="Toggle comments">💬</button>
     </div>
-
-    <div id="main">
+    
+    <!-- Main Content -->
+    <div id="main-container">
+        <!-- File Browser Panel -->
+        <div id="browser-panel">
+            <div id="browser-header">
+                <h3>📂 Documents</h3>
+                <button class="tool-btn" id="back-btn" style="font-size:0.75rem;" disabled>⬅ Back</button>
+            </div>
+            <input type="text" id="search-input" placeholder="🔍 Search files..." />
+            <div id="file-list">
+                <div class="loading-indicator">Loading repository...</div>
+            </div>
+        </div>
+        
         <!-- PDF Viewer -->
-        <div id="viewer">
-            <div class="empty-state">
-                <div class="icon">📖</div>
-                <p>Loading PDF document...</p>
+        <div id="viewer-panel">
+            <!-- Annotation Toolbar -->
+            <div id="annotation-toolbar" style="display:none;">
+                <div class="tool-group">
+                    <button class="tool-btn active" data-tool="select" title="Select/Move">🖱 Select</button>
+                    <button class="tool-btn" data-tool="highlight" title="Highlight Text">🖍 Highlight</button>
+                    <button class="tool-btn" data-tool="draw" title="Freehand Draw">✏️ Draw</button>
+                    <button class="tool-btn" data-tool="rectangle" title="Rectangle">⬜ Rect</button>
+                    <button class="tool-btn" data-tool="comment" title="Add Sticky Note">📝 Note</button>
+                </div>
+                <span style="color:var(--muted);font-size:0.8rem;">Color:</span>
+                <span class="color-btn selected" data-color="rgba(255,213,79,0.4)" style="background:#ffd54f;"></span>
+                <span class="color-btn" data-color="rgba(88,166,255,0.4)" style="background:#58a6ff;"></span>
+                <span class="color-btn" data-color="rgba(63,185,80,0.4)" style="background:#3fb950;"></span>
+                <span class="color-btn" data-color="rgba(248,81,73,0.4)" style="background:#f85149;"></span>
+                <button class="tool-btn" id="clear-page-annotations" title="Clear annotations on this page">🗑 Clear Page</button>
+                <button class="tool-btn" id="save-annotations-btn">💾 Save Annotations</button>
             </div>
-        </div>
-
-        <!-- Comment Sidebar -->
-        <div id="sidebar">
-            <div id="sidebar-header">
-                <h2>💬 Review Comments</h2>
-                <button class="btn btn-secondary" id="refresh-btn" title="Refresh from GitHub">🔄</button>
-            </div>
-            <div id="comments-container">
-                <div class="empty-state">
-                    <div class="icon">💭</div>
-                    <p>No comments yet.<br>Click any page in the PDF to leave feedback.</p>
+            
+            <div id="pdf-scroll-container">
+                <div id="no-pdf-message">
+                    <div class="icon">📁</div>
+                    <h3>Select a PDF to review</h3>
+                    <p style="margin-top:8px;">Browse the file tree on the left to open a document.</p>
                 </div>
             </div>
-            <div id="comment-form">
-                <label>Comment on <span id="target-page-label">Page ?</span></label>
-                <input type="text" id="author-input" placeholder="Your name" value="" />
-                <textarea id="comment-textarea" placeholder="Write your feedback... (Markdown supported)"></textarea>
-                <div class="btn-row">
-                    <button class="btn btn-primary" id="submit-btn">Post as GitHub Issue</button>
-                    <button class="btn btn-secondary" id="cancel-btn">Cancel</button>
-                    <span id="submit-spinner" style="display:none;"></span>
+        </div>
+        
+        <!-- Annotation Sidebar -->
+        <div id="annotation-sidebar">
+            <div id="annotation-sidebar-header">
+                <h3 style="font-size:0.9rem;">💬 Comments & Annotations</h3>
+                <span id="annotation-count" style="font-size:0.75rem;color:var(--muted);">0</span>
+            </div>
+            <div id="annotation-list">
+                <div style="color:var(--muted);text-align:center;padding:20px;font-size:0.85rem;">
+                    Select a PDF and use the toolbar to add annotations.
                 </div>
             </div>
         </div>
     </div>
-
+    
     <div id="toast"></div>
+    <div id="quote-popup">💬 Quote & Comment</div>
 
     <script>
         // ============================================================
-        // CONFIGURATION - EDIT THESE VALUES
+        // CONFIGURATION
         // ============================================================
         const CONFIG = {
-            // The PDF file to review (relative to this HTML file, or absolute URL)
-            PDF_URL: './UserGuide_v2.4_draft.pdf',
-            
-            // GitHub repository details
-            GITHUB_OWNER: 'YOUR_USERNAME',       // e.g., 'my-org'
-            GITHUB_REPO: 'YOUR_REPO_NAME',       // e.g., 'my-docs-repo'
-            
-            // GitHub Personal Access Token (classic) with 'repo' scope
-            // WARNING: Embedding tokens in client-side code is not fully secure.
-            // For public repos, use a fine-grained token scoped only to public_repo.
-            // For private repos, use GitHub Pages secrets or a proxy.
-            GITHUB_TOKEN: 'ghp_xxxxxxxxxxxxxxxxxxxx',
-            
-            // Label applied to all review Issues (creates automatically if not found)
-            ISSUE_LABEL: 'pdf-review',
-            
-            // Draft version identifier (used in Issue title prefix)
-            DRAFT_VERSION: 'v2.4-draft',
+            GITHUB_OWNER: 'DelMedicalTW',
+            GITHUB_REPO: 'DelMedicalRelease',
+            GITHUB_TOKEN: 'github_pat_YOUR_FINE_GRAINED_TOKEN_HERE',
+            ISSUE_LABEL_PREFIX: 'pdf-review',
         };
+        
         // ============================================================
-
+        // GLOBAL STATE
+        // ============================================================
+        let currentPath = '';           // e.g., 'FolderA/SubfolderB'
+        let currentPDFUrl = null;
+        let currentPDFName = '';
         let pdfDoc = null;
-        let selectedPage = null;
-        let allIssues = [];
-        let isLoading = false;
-
-        // --- Toast Notifications ---
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast');
-            toast.textContent = message;
-            toast.className = type + ' show';
-            setTimeout(() => toast.classList.remove('show'), 3500);
-        }
-
-        // --- GitHub API Helpers ---
+        let currentTool = 'select';
+        let currentColor = 'rgba(255,213,79,0.4)';
+        let annotations = [];           // All annotations for current PDF
+        let fabricCanvases = {};        // pageNum -> fabric.Canvas
+        let pageContainers = {};        // pageNum -> DOM element
+        let pdfScale = 1.5;
+        
         const API_BASE = `https://api.github.com/repos/${CONFIG.GITHUB_OWNER}/${CONFIG.GITHUB_REPO}`;
         const HEADERS = {
             'Authorization': `token ${CONFIG.GITHUB_TOKEN}`,
             'Accept': 'application/vnd.github.v3+json',
-            'Content-Type': 'application/json',
         };
-
-        async function githubFetch(url, options = {}) {
-            const response = await fetch(url, { headers: HEADERS, ...options });
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(`GitHub API error (${response.status}): ${err.message || response.statusText}`);
-            }
-            return response.json();
+        
+        // ============================================================
+        // UTILITY FUNCTIONS
+        // ============================================================
+        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = type + ' show';
+            setTimeout(() => t.classList.remove('show'), 3000);
         }
-
-        // Fetch all Issues with our label
-        async function fetchReviewIssues() {
-            const issues = [];
+        
+        function escapeHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+        
+        function isDraft(filename) {
+            // Detects Rev_X where X contains an alpha character: Rev_0A, Rev_5C, Rev_2b
+            return /Rev_\d+[A-Za-z]/i.test(filename);
+        }
+        
+        function getBaseName(path) {
+            return path.split('/').pop();
+        }
+        
+        // ============================================================
+        // GITHUB API
+        // ============================================================
+        async function githubFetch(url, options = {}) {
+            const resp = await fetch(url, { headers: HEADERS, ...options });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(`GitHub API (${resp.status}): ${err.message || resp.statusText}`);
+            }
+            return resp.json();
+        }
+        
+        async function fetchContents(path) {
+            const url = `${API_BASE}/contents/${path}`;
+            return githubFetch(url);
+        }
+        
+        async function getRawFile(downloadUrl) {
+            const resp = await fetch(downloadUrl, { headers: HEADERS });
+            if (!resp.ok) throw new Error(`Failed to download: ${resp.status}`);
+            return resp.blob();
+        }
+        
+        async function fetchIssuesForPDF(pdfName) {
+            const label = `${CONFIG.ISSUE_LABEL_PREFIX}:${pdfName}`;
+            const allIssues = [];
             let page = 1;
             while (true) {
-                const url = `${API_BASE}/issues?labels=${CONFIG.ISSUE_LABEL}&state=all&per_page=100&page=${page}`;
+                const url = `${API_BASE}/issues?labels=${encodeURIComponent(label)}&state=all&per_page=100&page=${page}`;
                 const batch = await githubFetch(url);
-                if (batch.length === 0) break;
-                issues.push(...batch);
+                if (!batch.length) break;
+                allIssues.push(...batch);
                 page++;
             }
-            // Filter: only Issues created by our tool (they have a specific body marker)
-            return issues.filter(issue => issue.body && issue.body.includes('<!-- pdf-review-comment -->'));
+            return allIssues;
         }
-
-        // Create a new Issue for a comment
-        async function createReviewIssue(pageNumber, commentText, authorName) {
-            const title = `[${CONFIG.DRAFT_VERSION}] Page ${pageNumber}: ${commentText.substring(0, 60)}${commentText.length > 60 ? '...' : ''}`;
-            const body = `<!-- pdf-review-comment -->
-**Reviewer:** ${authorName}
-**Page:** ${pageNumber}
-**Draft:** ${CONFIG.DRAFT_VERSION}
-**PDF:** [View PDF](${CONFIG.PDF_URL})
-
----
-
-${commentText}
+        
+        async function createAnnotationIssue(pdfName, pageNum, annotationData) {
+            const label = `${CONFIG.ISSUE_LABEL_PREFIX}:${pdfName}`;
+            const typeIcons = { highlight: '🖍', quote: '💬', drawing: '✏️', comment: '📝', rectangle: '⬜' };
+            const icon = typeIcons[annotationData.type] || '📌';
+            const title = `[${pdfName}] Page ${pageNum}: ${icon} ${annotationData.type} annotation`;
+            const body = `<!-- delmed-pdf-annotation -->
+**PDF:** ${pdfName}
+**Page:** ${pageNum}
+**Type:** ${annotationData.type}
+**Color:** ${annotationData.color || 'default'}
+**Data:** \`\`\`json
+${JSON.stringify(annotationData, null, 2)}
+\`\`\`
+${annotationData.quotedText ? `\n**Quoted Text:**\n> ${annotationData.quotedText}\n` : ''}
+${annotationData.comment || ''}
 `;
-            const payload = {
-                title,
-                body,
-                labels: [CONFIG.ISSUE_LABEL],
-            };
+            const payload = { title, body, labels: [label] };
             return githubFetch(`${API_BASE}/issues`, {
                 method: 'POST',
                 body: JSON.stringify(payload),
+                headers: { ...HEADERS, 'Content-Type': 'application/json' },
             });
         }
-
-        // Close an Issue (mark resolved)
-        async function closeIssue(issueNumber) {
-            return githubFetch(`${API_BASE}/issues/${issueNumber}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ state: 'closed' }),
-            });
-        }
-
-        // --- PDF Rendering ---
-        async function loadPDF() {
-            const viewer = document.getElementById('viewer');
-            try {
-                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-                pdfDoc = await pdfjsLib.getDocument(CONFIG.PDF_URL).promise;
-                document.getElementById('doc-title').textContent = CONFIG.PDF_URL.split('/').pop();
-                
-                viewer.innerHTML = '';
-                for (let i = 1; i <= pdfDoc.numPages; i++) {
-                    const page = await pdfDoc.getPage(i);
-                    const viewport = page.getViewport({ scale: 1.5 });
-                    
-                    const wrapper = document.createElement('div');
-                    wrapper.className = 'page-wrapper';
-                    wrapper.dataset.page = i;
-                    
-                    const canvas = document.createElement('canvas');
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
-                    
-                    const ctx = canvas.getContext('2d');
-                    await page.render({ canvasContext: ctx, viewport }).promise;
-                    
-                    const label = document.createElement('div');
-                    label.className = 'page-label';
-                    label.textContent = `Page ${i}`;
-                    
-                    wrapper.appendChild(canvas);
-                    wrapper.appendChild(label);
-                    
-                    wrapper.addEventListener('click', () => selectPage(i, wrapper));
-                    viewer.appendChild(wrapper);
-                }
-                document.getElementById('status').textContent = `✅ ${pdfDoc.numPages} pages loaded`;
-            } catch (err) {
-                viewer.innerHTML = `
-                    <div class="empty-state">
-                        <div class="icon">⚠️</div>
-                        <p><strong>Failed to load PDF</strong></p>
-                        <p style="font-size:0.85rem;">${err.message}</p>
-                        <p style="font-size:0.8rem; margin-top:8px;">
-                            Tip: If you're opening this file locally, serve it via a local web server:<br>
-                            <code>python -m http.server 8080</code> or <code>npx serve .</code>
-                        </p>
-                    </div>`;
-                document.getElementById('status').textContent = '❌ PDF load error';
-            }
-        }
-
-        // --- Page Selection ---
-        function selectPage(pageNum, wrapperElement) {
-            // Deselect all
-            document.querySelectorAll('.page-wrapper').forEach(w => w.classList.remove('selected'));
-            // Select this one
-            wrapperElement.classList.add('selected');
-            selectedPage = pageNum;
-            
-            // Show comment form
-            const form = document.getElementById('comment-form');
-            form.classList.add('visible');
-            document.getElementById('target-page-label').textContent = `Page ${pageNum}`;
-            document.getElementById('comment-textarea').focus();
-            
-            // Scroll sidebar to form
-            form.scrollIntoView({ behavior: 'smooth' });
-        }
-
-        function cancelComment() {
-            selectedPage = null;
-            document.getElementById('comment-form').classList.remove('visible');
-            document.getElementById('comment-textarea').value = '';
-            document.querySelectorAll('.page-wrapper').forEach(w => w.classList.remove('selected'));
-        }
-
-        // --- Submit Comment as GitHub Issue ---
-        async function submitComment() {
-            const textarea = document.getElementById('comment-textarea');
-            const authorInput = document.getElementById('author-input');
-            const submitBtn = document.getElementById('submit-btn');
-            const commentText = textarea.value.trim();
-            const authorName = authorInput.value.trim() || 'Anonymous Reviewer';
-            
-            if (!commentText) { showToast('Please enter a comment.', 'error'); return; }
-            if (!selectedPage) { showToast('Please select a page first.', 'error'); return; }
-            
-            isLoading = true;
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span id="loading-spinner"></span> Posting...';
+        
+        // ============================================================
+        // FILE BROWSER
+        // ============================================================
+        async function loadDirectory(path) {
+            const fileList = document.getElementById('file-list');
+            fileList.innerHTML = '<div class="loading-indicator">⏳ Loading...</div>';
+            currentPath = path;
+            updateBreadcrumb();
             
             try {
-                const newIssue = await createReviewIssue(selectedPage, commentText, authorName);
-                showToast(`✅ Issue #${newIssue.number} created!`, 'success');
+                const contents = await fetchContents(path);
                 
-                // Clear form and refresh
-                textarea.value = '';
-                cancelComment();
-                await loadComments();
-            } catch (err) {
-                showToast(`❌ Failed: ${err.message}`, 'error');
-            } finally {
-                isLoading = false;
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Post as GitHub Issue';
-            }
-        }
-
-        // --- Load and Display Comments ---
-        async function loadComments() {
-            const container = document.getElementById('comments-container');
-            container.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Loading comments from GitHub...</p></div>';
-            
-            try {
-                allIssues = await fetchReviewIssues();
-                document.getElementById('issue-count').textContent = `${allIssues.length} comment${allIssues.length !== 1 ? 's' : ''}`;
-                
-                if (allIssues.length === 0) {
-                    container.innerHTML = `
-                        <div class="empty-state">
-                            <div class="icon">💭</div>
-                            <p>No comments yet.</p>
-                            <p style="font-size:0.85rem;">Click any page in the PDF to leave feedback.</p>
-                        </div>`;
+                if (!Array.isArray(contents)) {
+                    // Single file returned
+                    fileList.innerHTML = '<div class="loading-indicator">This is a file, not a directory.</div>';
                     return;
                 }
                 
-                // Sort: open first, then by page number
-                allIssues.sort((a, b) => {
-                    if (a.state !== b.state) return a.state === 'open' ? -1 : 1;
-                    const pageA = parseInt(a.title.match(/Page (\d+)/)?.[1]) || 0;
-                    const pageB = parseInt(b.title.match(/Page (\d+)/)?.[1]) || 0;
-                    return pageA - pageB;
+                // Separate folders and PDFs
+                const folders = contents.filter(c => c.type === 'dir').sort((a, b) => a.name.localeCompare(b.name));
+                const pdfs = contents.filter(c => c.type === 'file' && c.name.toLowerCase().endsWith('.pdf')).sort((a, b) => a.name.localeCompare(b.name));
+                
+                if (folders.length === 0 && pdfs.length === 0) {
+                    fileList.innerHTML = '<div class="loading-indicator">No folders or PDFs found here.</div>';
+                    return;
+                }
+                
+                let html = '';
+                
+                // Render folders
+                folders.forEach(folder => {
+                    html += `
+                        <div class="folder-item" data-path="${folder.path}">
+                            <span class="icon">📁</span>
+                            <span class="name">${escapeHtml(folder.name)}</span>
+                        </div>`;
                 });
                 
-                container.innerHTML = allIssues.map(issue => {
-                    const pageMatch = issue.title.match(/Page (\d+)/);
-                    const pageNum = pageMatch ? pageMatch[1] : '?';
-                    const authorMatch = issue.body.match(/\*\*Reviewer:\*\*\s*(.+)/);
-                    const author = authorMatch ? authorMatch[1] : issue.user.login;
-                    const bodyClean = issue.body
-                        .replace(/<!-- pdf-review-comment -->/g, '')
-                        .replace(/\*\*Reviewer:\*\*.+/g, '')
-                        .replace(/\*\*Page:\*\*.+/g, '')
-                        .replace(/\*\*Draft:\*\*.+/g, '')
-                        .replace(/\*\*PDF:\*\*.+/g, '')
-                        .replace(/---/g, '')
-                        .trim();
-                    
-                    return `
-                        <div class="comment-card" onclick="navigateToPage(${pageNum})">
-                            <div class="comment-header">
-                                <span class="page-badge">📄 Page ${pageNum}</span>
-                                <span class="author">${escapeHtml(author)}</span>
-                                <span class="status-badge ${issue.state === 'open' ? 'status-open' : 'status-closed'}">${issue.state}</span>
-                            </div>
-                            <div class="comment-body">${escapeHtml(bodyClean)}</div>
-                            <div class="comment-footer">
-                                <a href="${issue.html_url}" target="_blank">#${issue.number} on GitHub ↗</a>
-                                <span>${new Date(issue.created_at).toLocaleDateString()}</span>
-                                ${issue.state === 'open' ? `<button class="btn btn-danger" onclick="event.stopPropagation(); resolveIssue(${issue.number})" title="Mark as resolved">✓ Resolve</button>` : ''}
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+                // Render PDFs
+                pdfs.forEach(pdf => {
+                    const draft = isDraft(pdf.name);
+                    const badge = draft ? '<span class="badge badge-draft">DRAFT</span>' : '<span class="badge badge-release">RELEASE</span>';
+                    const active = currentPDFUrl === pdf.download_url ? ' active' : '';
+                    html += `
+                        <div class="file-item${active}" data-url="${pdf.download_url}" data-name="${escapeHtml(pdf.name)}" data-path="${pdf.path}">
+                            <span class="icon">📄</span>
+                            <span class="name">${escapeHtml(pdf.name)}</span>
+                            ${badge}
+                        </div>`;
+                });
+                
+                fileList.innerHTML = html;
+                
+                // Click handlers for folders
+                fileList.querySelectorAll('.folder-item').forEach(el => {
+                    el.addEventListener('click', () => loadDirectory(el.dataset.path));
+                });
+                
+                // Click handlers for PDFs
+                fileList.querySelectorAll('.file-item').forEach(el => {
+                    el.addEventListener('click', () => loadPDF(el.dataset.url, el.dataset.name));
+                });
+                
+                document.getElementById('back-btn').disabled = !path;
             } catch (err) {
-                container.innerHTML = `
-                    <div class="empty-state">
-                        <div class="icon">⚠️</div>
-                        <p><strong>Could not load comments</strong></p>
-                        <p style="font-size:0.85rem;">${err.message}</p>
-                        <p style="font-size:0.8rem; margin-top:8px;">Check your GitHub token and repository settings.</p>
-                    </div>`;
-                document.getElementById('status').textContent = '❌ GitHub API error';
+                fileList.innerHTML = `<div class="loading-indicator">❌ Error: ${escapeHtml(err.message)}</div>`;
             }
         }
-
-        function navigateToPage(pageNum) {
-            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageNum}"]`);
-            if (wrapper) {
-                wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                // Brief highlight
-                wrapper.classList.add('selected');
-                setTimeout(() => wrapper.classList.remove('selected'), 2000);
-            }
+        
+        function updateBreadcrumb() {
+            const bc = document.getElementById('breadcrumb');
+            const parts = currentPath ? currentPath.split('/') : [];
+            let html = `<span style="cursor:pointer;" data-path="">DelMedicalRelease</span>`;
+            parts.forEach((part, i) => {
+                const subpath = parts.slice(0, i + 1).join('/');
+                html += ` <span class="sep">/</span> <span style="cursor:pointer;" data-path="${subpath}">${escapeHtml(part)}</span>`;
+            });
+            bc.innerHTML = html;
+            bc.querySelectorAll('span[data-path]').forEach(s => {
+                s.addEventListener('click', () => loadDirectory(s.dataset.path));
+            });
         }
-
-        async function resolveIssue(issueNumber) {
-            try {
-                await closeIssue(issueNumber);
-                showToast(`✅ Issue #${issueNumber} resolved.`, 'success');
-                await loadComments();
-            } catch (err) {
-                showToast(`❌ Failed to resolve: ${err.message}`, 'error');
-            }
-        }
-
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-
-        // --- Event Listeners ---
-        document.getElementById('submit-btn').addEventListener('click', submitComment);
-        document.getElementById('cancel-btn').addEventListener('click', cancelComment);
-        document.getElementById('refresh-btn').addEventListener('click', async () => {
-            await loadComments();
-            showToast('Comments refreshed from GitHub', 'success');
+        
+        document.getElementById('back-btn').addEventListener('click', () => {
+            if (!currentPath) return;
+            const parent = currentPath.split('/').slice(0, -1).join('/');
+            loadDirectory(parent || '');
         });
         
-        // Keyboard shortcut: Escape to cancel
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && document.getElementById('comment-form').classList.contains('visible')) {
-                cancelComment();
-            }
-            // Ctrl+Enter to submit
-            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && document.getElementById('comment-form').classList.contains('visible')) {
-                e.preventDefault();
-                submitComment();
-            }
+        // Search
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            document.querySelectorAll('#file-list .file-item, #file-list .folder-item').forEach(el => {
+                const name = (el.querySelector('.name')?.textContent || '').toLowerCase();
+                el.style.display = name.includes(query) ? '' : 'none';
+            });
         });
-
-        // Auto-save author name
-        const savedAuthor = localStorage.getItem('pdf-review-author');
-        if (savedAuthor) document.getElementById('author-input').value = savedAuthor;
-        document.getElementById('author-input').addEventListener('change', (e) => {
-            localStorage.setItem('pdf-review-author', e.target.value);
-        });
-
-        // --- Initialize ---
-        async function init() {
-            document.getElementById('status').textContent = '⏳ Loading...';
-            await loadPDF();
-            await loadComments();
-            document.getElementById('status').textContent = '🟢 Ready';
+        
+        // ============================================================
+        // PDF LOADING & RENDERING
+        // ============================================================
+        async function loadPDF(url, name) {
+            currentPDFUrl = url;
+            currentPDFName = name;
+            annotations = [];
+            fabricCanvases = {};
+            pageContainers = {};
+            
+            // Update file list highlight
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+            const activeEl = document.querySelector(`.file-item[data-url="${url}"]`);
+            if (activeEl) activeEl.classList.add('active');
+            
+            // Update UI
+            document.getElementById('no-pdf-message').style.display = 'none';
+            document.getElementById('annotation-toolbar').style.display = 'flex';
+            document.getElementById('pdf-scroll-container').innerHTML = '<div class="loading-indicator" style="padding:40px;">⏳ Loading PDF...</div>';
+            
+            try {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                const loadingTask = pdfjsLib.getDocument({ url, httpHeaders: HEADERS });
+                pdfDoc = await loadingTask.promise;
+                
+                document.getElementById('pdf-scroll-container').innerHTML = '';
+                
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    await renderPage(i);
+                }
+                
+                // Load existing annotations from GitHub Issues
+                await loadAnnotationsFromIssues();
+                
+                showToast(`✅ Loaded ${pdfDoc.numPages} pages`, 'success');
+            } catch (err) {
+                document.getElementById('pdf-scroll-container').innerHTML = `
+                    <div id="no-pdf-message" style="display:flex;">
+                        <div class="icon">⚠️</div>
+                        <h3>Failed to load PDF</h3>
+                        <p>${escapeHtml(err.message)}</p>
+                    </div>`;
+            }
         }
-
+        
+        async function renderPage(pageNum) {
+            const page = await pdfDoc.getPage(pageNum);
+            const viewport = page.getViewport({ scale: pdfScale });
+            
+            const container = document.getElementById('pdf-scroll-container');
+            
+            // Create page container
+            const pageContainer = document.createElement('div');
+            pageContainer.className = 'page-container';
+            pageContainer.style.width = viewport.width + 'px';
+            pageContainer.style.height = viewport.height + 'px';
+            pageContainer.dataset.page = pageNum;
+            
+            // PDF canvas
+            const pdfCanvas = document.createElement('canvas');
+            pdfCanvas.width = viewport.width;
+            pdfCanvas.height = viewport.height;
+            const ctx = pdfCanvas.getContext('2d');
+            await page.render({ canvasContext: ctx, viewport }).promise;
+            pageContainer.appendChild(pdfCanvas);
+            
+            // Fabric.js annotation layer
+            const annCanvas = document.createElement('canvas');
+            annCanvas.width = viewport.width;
+            annCanvas.height = viewport.height;
+            annCanvas.className = 'annotation-layer';
+            annCanvas.style.width = viewport.width + 'px';
+            annCanvas.style.height = viewport.height + 'px';
+            pageContainer.appendChild(annCanvas);
+            
+            // Initialize Fabric canvas
+            const fabricCanvas = new fabric.Canvas(annCanvas, {
+                selection: true,
+                isDrawingMode: false,
+            });
+            fabricCanvas.selection = true;
+            fabricCanvas.on('object:modified', () => saveAnnotationState(pageNum));
+            fabricCanvas.on('path:created', () => saveAnnotationState(pageNum));
+            
+            fabricCanvases[pageNum] = fabricCanvas;
+            pageContainers[pageNum] = pageContainer;
+            
+            // Page label
+            const label = document.createElement('div');
+            label.className = 'page-label-overlay';
+            label.textContent = `Page ${pageNum}`;
+            pageContainer.appendChild(label);
+            
+            // Text selection for quoting
+            pageContainer.addEventListener('mouseup', (e) => handleTextSelection(e, pageNum));
+            
+            // Click on page for sticky note
+            pageContainer.addEventListener('dblclick', (e) => handlePageDoubleClick(e, pageNum));
+            
+            container.appendChild(pageContainer);
+            
+            // Set tool mode
+            setToolMode(currentTool);
+        }
+        
+        // ============================================================
+        // TOOL MODES
+        // ============================================================
+        function setToolMode(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.remove('active'));
+            const activeBtn = document.querySelector(`.tool-btn[data-tool="${tool}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
+            
+            Object.values(fabricCanvases).forEach(fc => {
+                fc.isDrawingMode = (tool === 'draw');
+                fc.selection = (tool === 'select');
+                
+                if (tool === 'draw') {
+                    fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)'); // full opacity for drawing
+                    fc.freeDrawingBrush.width = 2;
+                }
+            });
+        }
+        
+        document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
+            btn.addEventListener('click', () => setToolMode(btn.dataset.tool));
+        });
+        
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                currentColor = btn.dataset.color;
+                if (currentTool === 'draw') {
+                    Object.values(fabricCanvases).forEach(fc => {
+                        fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)');
+                    });
+                }
+            });
+        });
+        
+        // ============================================================
+        // HIGHLIGHT
+        // ============================================================
+        function handleTextSelection(e, pageNum) {
+            const selection = window.getSelection();
+            const text = selection.toString().trim();
+            if (!text || currentTool !== 'highlight') return;
+            
+            // Check if selection is within this page container
+            const container = pageContainers[pageNum];
+            if (!container || !container.contains(selection.anchorNode)) return;
+            
+            const popup = document.getElementById('quote-popup');
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const scrollContainer = document.getElementById('pdf-scroll-container');
+            const scrollRect = scrollContainer.getBoundingClientRect();
+            
+            popup.style.display = 'block';
+            popup.style.left = (rect.left + rect.width / 2 - 60) + 'px';
+            popup.style.top = (rect.bottom + 8 - scrollRect.top + scrollContainer.scrollTop) + 'px';
+            popup.dataset.pageNum = pageNum;
+            popup.dataset.quotedText = text;
+            
+            // Add highlight rect
+            if (currentTool === 'highlight') {
+                addHighlightFromSelection(selection, pageNum);
+            }
+            
+            setTimeout(() => {
+                popup.style.display = 'none';
+            }, 3000);
+        }
+        
+        document.getElementById('quote-popup').addEventListener('click', async () => {
+            const popup = document.getElementById('quote-popup');
+            const pageNum = parseInt(popup.dataset.pageNum);
+            const quotedText = popup.dataset.quotedText;
+            const comment = prompt('Add a comment to this quote:', '');
+            if (comment === null) return; // cancelled
+            
+            const annotation = {
+                type: 'quote',
+                page: pageNum,
+                quotedText: quotedText,
+                comment: comment || '',
+                color: currentColor,
+                timestamp: new Date().toISOString(),
+            };
+            annotations.push(annotation);
+            
+            try {
+                await createAnnotationIssue(currentPDFName, pageNum, annotation);
+                showToast('✅ Quote saved as GitHub Issue', 'success');
+            } catch (err) {
+                showToast('❌ Failed to save: ' + err.message, 'error');
+            }
+            
+            renderAnnotationList();
+            popup.style.display = 'none';
+        });
+        
+        function addHighlightFromSelection(selection, pageNum) {
+            const range = selection.getRangeAt(0);
+            const container = pageContainers[pageNum];
+            const containerRect = container.getBoundingClientRect();
+            const rects = range.getClientRects();
+            
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            
+            for (let i = 0; i < rects.length; i++) {
+                const r = rects[i];
+                const left = r.left - containerRect.left;
+                const top = r.top - containerRect.top;
+                
+                const rect = new fabric.Rect({
+                    left: left,
+                    top: top,
+                    width: r.width,
+                    height: r.height,
+                    fill: currentColor,
+                    selectable: true,
+                    evented: true,
+                    opacity: 0.5,
+                });
+                fc.add(rect);
+            }
+            fc.renderAll();
+            saveAnnotationState(pageNum);
+        }
+        
+        // ============================================================
+        // STICKY NOTE (Double-click)
+        // ============================================================
+        function handlePageDoubleClick(e, pageNum) {
+            if (currentTool !== 'comment') return;
+            const container = pageContainers[pageNum];
+            const rect = container.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+            
+            const comment = prompt('Add a sticky note comment:', '');
+            if (!comment) return;
+            
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            
+            // Add a visual marker
+            const circle = new fabric.Circle({
+                left: x - 10,
+                top: y - 10,
+                radius: 10,
+                fill: '#3fb950',
+                opacity: 0.7,
+                selectable: true,
+            });
+            
+            const text = new fabric.Text('📝', {
+                left: x - 10,
+                top: y - 12,
+                fontSize: 16,
+                selectable: false,
+            });
+            
+            const group = new fabric.Group([circle, text], {
+                left: x - 10,
+                top: y - 10,
+                selectable: true,
+            });
+            
+            fc.add(group);
+            fc.renderAll();
+            
+            const annotation = {
+                type: 'comment',
+                page: pageNum,
+                comment: comment,
+                x: Math.round(x),
+                y: Math.round(y),
+                timestamp: new Date().toISOString(),
+            };
+            annotations.push(annotation);
+            saveAnnotationState(pageNum);
+            
+            createAnnotationIssue(currentPDFName, pageNum, annotation).catch(err => {
+                showToast('⚠️ Local save only: ' + err.message, 'error');
+            });
+            
+            renderAnnotationList();
+        }
+        
+        // ============================================================
+        // RECTANGLE TOOL
+        // ============================================================
+        // Override mouse events for rectangle drawing
+        let isDrawingRect = false;
+        let rectStart = null;
+        let tempRect = null;
+        
+        document.getElementById('pdf-scroll-container').addEventListener('mousedown', function(e) {
+            if (currentTool !== 'rectangle') return;
+            const target = e.target.closest('.page-container');
+            if (!target) return;
+            const pageNum = parseInt(target.dataset.page);
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            
+            const containerRect = target.getBoundingClientRect();
+            const pointer = fc.getPointer(e);
+            
+            isDrawingRect = true;
+            rectStart = { x: pointer.x, y: pointer.y };
+            
+            tempRect = new fabric.Rect({
+                left: pointer.x,
+                top: pointer.y,
+                width: 0,
+                height: 0,
+                fill: 'transparent',
+                stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
+                strokeWidth: 2,
+                selectable: false,
+                evented: false,
+            });
+            fc.add(tempRect);
+        });
+        
+        document.getElementById('pdf-scroll-container').addEventListener('mousemove', function(e) {
+            if (!isDrawingRect || !tempRect) return;
+            const target = e.target.closest('.page-container');
+            if (!target) return;
+            const pageNum = parseInt(target.dataset.page);
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            
+            const pointer = fc.getPointer(e);
+            const width = pointer.x - rectStart.x;
+            const height = pointer.y - rectStart.y;
+            
+            tempRect.set({
+                left: width > 0 ? rectStart.x : pointer.x,
+                top: height > 0 ? rectStart.y : pointer.y,
+                width: Math.abs(width),
+                height: Math.abs(height),
+            });
+            fc.renderAll();
+        });
+        
+        document.getElementById('pdf-scroll-container').addEventListener('mouseup', function(e) {
+            if (!isDrawingRect) return;
+            isDrawingRect = false;
+            
+            if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
+                tempRect.set({ selectable: true, evented: true });
+                const target = e.target.closest('.page-container');
+                if (target) {
+                    const pageNum = parseInt(target.dataset.page);
+                    saveAnnotationState(pageNum);
+                }
+            } else if (tempRect) {
+                tempRect.canvas?.remove(tempRect);
+            }
+            tempRect = null;
+            rectStart = null;
+        });
+        
+        // ============================================================
+        // SAVE / RESTORE ANNOTATIONS
+        // ============================================================
+        function saveAnnotationState(pageNum) {
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            const objects = fc.getObjects().map(o => o.toJSON());
+            // Update or add annotation entry
+            const existing = annotations.findIndex(a => a.type === 'drawing' && a.page === pageNum);
+            if (existing >= 0) {
+                annotations[existing].objects = objects;
+                annotations[existing].timestamp = new Date().toISOString();
+            } else if (objects.length > 0) {
+                annotations.push({
+                    type: 'drawing',
+                    page: pageNum,
+                    objects: objects,
+                    color: currentColor,
+                    timestamp: new Date().toISOString(),
+                });
+            }
+            renderAnnotationList();
+        }
+        
+        function restoreAnnotationsForPage(pageNum) {
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            fc.clear();
+            
+            const pageAnnotations = annotations.filter(a => a.page === pageNum);
+            pageAnnotations.forEach(ann => {
+                if (ann.type === 'drawing' && ann.objects) {
+                    fabric.util.enlivenObjects(ann.objects, (objects) => {
+                        objects.forEach(o => fc.add(o));
+                        fc.renderAll();
+                    });
+                }
+            });
+        }
+        
+        async function loadAnnotationsFromIssues() {
+            try {
+                const issues = await fetchIssuesForPDF(currentPDFName);
+                issues.forEach(issue => {
+                    if (!issue.body || !issue.body.includes('<!-- delmed-pdf-annotation -->')) return;
+                    
+                    // Extract JSON data
+                    const jsonMatch = issue.body.match(/```json\n([\s\S]*?)\n```/);
+                    if (!jsonMatch) return;
+                    
+                    try {
+                        const data = JSON.parse(jsonMatch[1]);
+                        data.issueNumber = issue.number;
+                        data.issueState = issue.state;
+                        data.issueUrl = issue.html_url;
+                        annotations.push(data);
+                    } catch (e) {
+                        // Skip malformed JSON
+                    }
+                });
+                
+                // Restore drawing annotations
+                Object.keys(fabricCanvases).forEach(pageNum => {
+                    restoreAnnotationsForPage(parseInt(pageNum));
+                });
+                
+                renderAnnotationList();
+                showToast(`📋 Loaded ${annotations.length} annotations`, 'success');
+            } catch (err) {
+                console.warn('Could not load annotations:', err.message);
+            }
+        }
+        
+        document.getElementById('save-annotations-btn').addEventListener('click', async () => {
+            let saved = 0;
+            for (const ann of annotations) {
+                if (ann.issueNumber) continue; // Already saved
+                try {
+                    const issue = await createAnnotationIssue(currentPDFName, ann.page, ann);
+                    ann.issueNumber = issue.number;
+                    ann.issueUrl = issue.html_url;
+                    saved++;
+                } catch (err) {
+                    console.error('Save failed:', err);
+                }
+            }
+            if (saved > 0) showToast(`💾 Saved ${saved} annotations as GitHub Issues`, 'success');
+            else showToast('All annotations already saved.', 'success');
+            renderAnnotationList();
+        });
+        
+        document.getElementById('clear-page-annotations').addEventListener('click', () => {
+            // Clear annotations for the first visible page
+            const visiblePage = findMostVisiblePage();
+            if (!visiblePage) return;
+            const fc = fabricCanvases[visiblePage];
+            if (!fc) return;
+            fc.clear();
+            fc.renderAll();
+            annotations = annotations.filter(a => a.page !== visiblePage);
+            renderAnnotationList();
+            showToast(`Cleared annotations on page ${visiblePage}`, 'success');
+        });
+        
+        function findMostVisiblePage() {
+            const scrollContainer = document.getElementById('pdf-scroll-container');
+            const containerRect = scrollContainer.getBoundingClientRect();
+            let bestPage = null;
+            let bestOverlap = 0;
+            
+            Object.entries(pageContainers).forEach(([pageNum, el]) => {
+                const rect = el.getBoundingClientRect();
+                const overlap = Math.max(0, Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top));
+                if (overlap > bestOverlap) {
+                    bestOverlap = overlap;
+                    bestPage = parseInt(pageNum);
+                }
+            });
+            return bestPage;
+        }
+        
+        // ============================================================
+        // ANNOTATION LIST RENDERING
+        // ============================================================
+        function renderAnnotationList() {
+            const list = document.getElementById('annotation-list');
+            const count = document.getElementById('annotation-count');
+            
+            if (annotations.length === 0) {
+                list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;font-size:0.85rem;">No annotations yet. Use the toolbar to add highlights, drawings, or notes.</div>';
+                count.textContent = '0';
+                return;
+            }
+            
+            // Sort by page
+            annotations.sort((a, b) => a.page - b.page);
+            
+            count.textContent = annotations.length;
+            
+            const typeLabels = {
+                highlight: { label: 'Highlight', cls: 'ann-type-highlight' },
+                quote: { label: 'Quote', cls: 'ann-type-quote' },
+                drawing: { label: 'Drawing', cls: 'ann-type-drawing' },
+                comment: { label: 'Note', cls: 'ann-type-comment' },
+                rectangle: { label: 'Rectangle', cls: 'ann-type-drawing' },
+            };
+            
+            list.innerHTML = annotations.map(ann => {
+                const tl = typeLabels[ann.type] || { label: ann.type, cls: 'ann-type-comment' };
+                let body = '';
+                
+                if (ann.quotedText) {
+                    body += `<blockquote>${escapeHtml(ann.quotedText)}</blockquote>`;
+                }
+                if (ann.comment) {
+                    body += `<p>${escapeHtml(ann.comment)}</p>`;
+                }
+                if (ann.type === 'drawing' && !ann.comment) {
+                    body += '<p style="color:var(--muted);">Drawing annotation</p>';
+                }
+                
+                return `
+                    <div class="annotation-card" onclick="scrollToPage(${ann.page})">
+                        <div class="ann-header">
+                            <span class="ann-type ${tl.cls}">${tl.label}</span>
+                            <span>Page ${ann.page}</span>
+                            ${ann.issueNumber ? `<a href="${ann.issueUrl}" target="_blank" style="color:var(--muted);margin-left:auto;">#${ann.issueNumber} ↗</a>` : '<span style="color:var(--yellow);margin-left:auto;">Unsaved</span>'}
+                            ${ann.issueState === 'closed' ? '<span style="color:var(--green);font-size:0.7rem;">✓ Resolved</span>' : ''}
+                        </div>
+                        <div class="ann-body">${body}</div>
+                        <div class="ann-footer">
+                            <span>${new Date(ann.timestamp).toLocaleString()}</span>
+                        </div>
+                    </div>`;
+            }).join('');
+        }
+        
+        function scrollToPage(pageNum) {
+            const container = pageContainers[pageNum];
+            if (container) {
+                container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Flash effect
+                container.style.boxShadow = '0 0 0 4px var(--accent)';
+                setTimeout(() => {
+                    container.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)';
+                }, 1500);
+            }
+        }
+        
+        // ============================================================
+        // PANEL TOGGLES
+        // ============================================================
+        document.getElementById('toggle-browser').addEventListener('click', () => {
+            document.getElementById('browser-panel').classList.toggle('collapsed');
+        });
+        document.getElementById('toggle-annotations').addEventListener('click', () => {
+            document.getElementById('annotation-sidebar').classList.toggle('collapsed');
+        });
+        
+        // ============================================================
+        // INIT
+        // ============================================================
+        async function init() {
+            await loadDirectory('');
+        }
         init();
     </script>
 </body>
