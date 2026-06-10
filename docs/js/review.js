@@ -1,91 +1,112 @@
-// ============================================================
-// MAIN APP ENTRY POINT
-// ============================================================
 var App = (function() {
     var currentPDFName = '';
     var isLoadingPDF = false;
 
-    function getEl(id) { return document.getElementById(id); }
+    function $(id) { return document.getElementById(id); }
 
     async function loadPDF(contentsPath, name) {
-        if (isLoadingPDF) return;
+        if (isLoadingPDF) { return; }
         isLoadingPDF = true;
         currentPDFName = name;
-        Browser.highlightActiveFile(name);
+        Browser.highlightFile(name);
+
+        var pdfNameEl = $('current-pdf-name');
+        if (pdfNameEl) { pdfNameEl.textContent = name; }
+
+        // Load from storage
+        Annotations.loadLocal();
+        Sidebar.render(Annotations.getAnnotations());
+
+        // Load from GitHub in background
+        var syncBadge = $('sync-badge');
+        var syncLabel = $('sync-label');
+        if (syncBadge) { syncBadge.className = 'badge badge-sm badge-info gap-1'; }
+        if (syncLabel) { syncLabel.textContent = 'Loading...'; }
+        var count = await Annotations.loadFromGitHub(name);
+        Sidebar.render(Annotations.getAnnotations());
+        if (syncBadge) { syncBadge.className = 'badge badge-sm badge-ghost gap-1'; }
+        if (syncLabel) { syncLabel.textContent = 'GitHub'; }
+
         await PDFViewer.loadPDF(contentsPath, name);
         isLoadingPDF = false;
     }
 
-    function init() {
-        var toggleBrowser = getEl('toggle-browser');
-        var toggleAnnotations = getEl('toggle-annotations');
+    function getCurrentPDFName() {
+        return currentPDFName;
+    }
 
-        if (toggleBrowser) toggleBrowser.addEventListener('click', function() {
-            var panel = getEl('browser-panel');
-            if (panel) { panel.classList.toggle('!w-0'); panel.classList.toggle('!min-w-0'); }
-        });
-        if (toggleAnnotations) toggleAnnotations.addEventListener('click', function() {
-            var panel = getEl('annotation-sidebar');
-            if (panel) { panel.classList.toggle('!w-0'); panel.classList.toggle('!min-w-0'); }
-        });
+    // Panel toggles
+    $('toggle-browser').onclick = function() {
+        var p = $('browser-panel');
+        if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); }
+    };
+    $('toggle-annotations').onclick = function() {
+        var p = $('annotation-sidebar');
+        if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); }
+    };
 
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') Annotations.setToolMode('select');
-            if (e.key === 'h' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) Annotations.setToolMode('highlight');
-            if (e.key === 'd' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) Annotations.setToolMode('draw');
+    // Theme
+    var savedTheme = localStorage.getItem('delmed-theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    document.querySelectorAll('[data-theme-switch]').forEach(function(el) {
+        el.addEventListener('click', function(e) {
+            e.preventDefault();
+            var theme = el.dataset.themeSwitch;
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('delmed-theme', theme);
+            var dd = el.closest('.dropdown');
+            if (dd) { var btn = dd.querySelector('button'); if (btn) { btn.blur(); } }
+        });
+    });
+
+    // Reviewer
+    var reviewerInput = $('reviewer-name');
+    if (reviewerInput) {
+        reviewerInput.value = localStorage.getItem('delmed-reviewer') || '';
+        reviewerInput.addEventListener('change', function() {
+            localStorage.setItem('delmed-reviewer', reviewerInput.value.trim());
         });
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-            init();
-            Browser.loadDirectory('').then(function() {
-                UI.showToast('Connected to DelMedicalRelease repository', 'success');
-            }).catch(function(err) {
-                UI.showToast('Failed to load repository: ' + err.message, 'error');
-            });
-        });
-    } else {
-        init();
-        Browser.loadDirectory('').then(function() {
-            UI.showToast('Connected to DelMedicalRelease repository', 'success');
-        }).catch(function(err) {
-            UI.showToast('Failed to load repository: ' + err.message, 'error');
-        });
-    }
+    // Keyboard
+    document.addEventListener('keydown', function(e) {
+        if (document.activeElement !== document.body && document.activeElement.tagName !== 'BODY') { return; }
+        if (e.key === 'Escape') { Annotations.setTool('select'); }
+        if (e.key === 'h') { Annotations.setTool('highlight'); }
+        if (e.key === 'd') { Annotations.setTool('draw'); }
+        if (e.key === 'r') { Annotations.setTool('rectangle'); }
+        if (e.key === 'n') { Annotations.setTool('comment'); }
+    });
+
+    // Init
+    Browser.loadDir('').then(function() {
+        UI.showToast('Connected to DelMedicalRelease', 'success');
+    }).catch(function(err) {
+        UI.showToast(err.message, 'error');
+    });
 
     return {
         loadPDF: loadPDF,
-        getCurrentPDFName: function() { return currentPDFName; },
+        getCurrentPDFName: getCurrentPDFName
     };
 })();
 
-// ============================================================
-// UI UTILITIES
-// ============================================================
+// UI Utilities
 var UI = (function() {
-    var toast, toastAlert, toastMessage, successIcon, errorIcon, timeout;
-
-    function init() {
-        toast = document.getElementById('toast');
-        toastAlert = document.getElementById('toast-alert');
-        toastMessage = document.getElementById('toast-message');
-        successIcon = document.getElementById('toast-icon-success');
-        errorIcon = document.getElementById('toast-icon-error');
-    }
-
     function showToast(msg, type) {
-        if (!toast) init();
-        if (!toast) return;
-        type = type || 'success';
-        toastMessage.textContent = msg;
-        toastAlert.className = 'alert ' + (type === 'error' ? 'alert-error' : 'alert-success');
-        if (successIcon) successIcon.classList.toggle('hidden', type !== 'success');
-        if (errorIcon) errorIcon.classList.toggle('hidden', type !== 'error');
-        toast.classList.remove('hidden');
-        clearTimeout(timeout);
-        timeout = setTimeout(function() { toast.classList.add('hidden'); }, 3000);
+        var t = document.getElementById('toast');
+        var a = document.getElementById('toast-alert');
+        var m = document.getElementById('toast-message');
+        var ok = document.getElementById('toast-icon-ok');
+        var err = document.getElementById('toast-icon-err');
+        if (!t || !a || !m) { return; }
+        m.textContent = msg;
+        a.className = 'alert ' + (type === 'error' ? 'alert-error' : 'alert-success');
+        if (ok) { ok.classList.toggle('hidden', type === 'error'); }
+        if (err) { err.classList.toggle('hidden', type !== 'error'); }
+        t.classList.remove('hidden');
+        clearTimeout(t._timer);
+        t._timer = setTimeout(function() { t.classList.add('hidden'); }, 3500);
     }
-
     return { showToast: showToast };
 })();
