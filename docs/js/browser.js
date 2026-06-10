@@ -1,7 +1,11 @@
 // ============================================================
 // FILE BROWSER
 // ============================================================
-const Browser = (function() {
+var Browser = (function() {
+    if (typeof Browser !== 'undefined' && Browser.loadDirectory) {
+        return Browser;
+    }
+
     let currentPath = '';
 
     const $ = function(id) { return document.getElementById(id); };
@@ -21,6 +25,7 @@ const Browser = (function() {
     }
 
     function updateBreadcrumb() {
+        if (!breadcrumb) return;
         const parts = currentPath ? currentPath.split('/') : [];
         let html = '<li><a href="#" data-path="">DelMedicalRelease</a></li>';
         parts.forEach(function(part, i) {
@@ -37,6 +42,7 @@ const Browser = (function() {
     }
 
     async function loadDirectory(path) {
+        if (!fileList) return;
         fileList.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Loading...</div>';
         currentPath = path;
         updateBreadcrumb();
@@ -70,7 +76,7 @@ const Browser = (function() {
                 const badge = draft
                     ? '<span class="badge badge-warning badge-xs ml-auto flex-shrink-0">DRAFT</span>'
                     : '<span class="badge badge-success badge-xs ml-auto flex-shrink-0">RELEASE</span>';
-                const active = App.getCurrentPDFName() === pdf.name ? ' bg-primary/10 border-l-primary' : '';
+                const active = (typeof App !== 'undefined' && App.getCurrentPDFName() === pdf.name) ? ' bg-primary/10 border-l-primary' : '';
                 html += '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 border-l-3 border-transparent' + active + ' select-none" data-path="' + pdf.path + '" data-name="' + escapeHtml(pdf.name) + '">' +
                     '<i data-lucide="file-text" class="w-4 h-4 flex-shrink-0 text-error"></i>' +
                     '<span class="truncate">' + escapeHtml(pdf.name) + '</span>' +
@@ -79,11 +85,9 @@ const Browser = (function() {
             });
             fileList.innerHTML = html;
 
-            // Re-initialize Lucide icons for the new content
-            lucide.createIcons();
+            if (typeof lucide !== 'undefined') lucide.createIcons();
 
-            // Click handlers
-            fileList.querySelectorAll('.folder-item, [data-path]:not([data-name])').forEach(function(el) {
+            fileList.querySelectorAll('[data-path]:not([data-name])').forEach(function(el) {
                 el.addEventListener('click', function() { loadDirectory(el.dataset.path); });
             });
             fileList.querySelectorAll('[data-name]').forEach(function(el) {
@@ -94,33 +98,37 @@ const Browser = (function() {
                 });
             });
 
-            backBtn.disabled = !path;
+            if (backBtn) backBtn.disabled = !path;
         } catch (err) {
             fileList.innerHTML = '<div class="text-center py-8 text-error text-sm">Error: ' + escapeHtml(err.message) + '</div>';
         }
     }
 
-    backBtn.addEventListener('click', function() {
-        if (!currentPath) return;
-        const parent = currentPath.split('/').slice(0, -1).join('/');
-        loadDirectory(parent || '');
-    });
+    if (backBtn) {
+        backBtn.addEventListener('click', function() {
+            if (!currentPath) return;
+            const parent = currentPath.split('/').slice(0, -1).join('/');
+            loadDirectory(parent || '');
+        });
+    }
 
-    searchInput.addEventListener('input', function(e) {
-        const query = e.target.value.toLowerCase();
-        fileList.querySelectorAll('[data-name]').forEach(function(el) {
-            const name = (el.querySelector('.truncate') ? el.querySelector('.truncate').textContent : '').toLowerCase();
-            el.style.display = name.indexOf(query) !== -1 ? '' : 'none';
+    if (searchInput) {
+        searchInput.addEventListener('input', function(e) {
+            const query = e.target.value.toLowerCase();
+            document.querySelectorAll('#file-list [data-name]').forEach(function(el) {
+                const name = (el.querySelector('.truncate') ? el.querySelector('.truncate').textContent : '').toLowerCase();
+                el.style.display = name.indexOf(query) !== -1 ? '' : 'none';
+            });
+            document.querySelectorAll('#file-list [data-path]:not([data-name])').forEach(function(el) {
+                const name = (el.querySelector('.truncate') ? el.querySelector('.truncate').textContent : '').toLowerCase();
+                el.style.display = name.indexOf(query) !== -1 ? '' : 'none';
+            });
         });
-        fileList.querySelectorAll('[data-path]:not([data-name])').forEach(function(el) {
-            const name = (el.querySelector('.truncate') ? el.querySelector('.truncate').textContent : '').toLowerCase();
-            el.style.display = name.indexOf(query) !== -1 ? '' : 'none';
-        });
-    });
+    }
 
     function highlightActiveFile(pdfName) {
-        fileList.querySelectorAll('[data-name]').forEach(function(el) { el.classList.remove('bg-primary/10', 'border-l-primary'); });
-        const active = fileList.querySelector('[data-name="' + pdfName + '"]');
+        document.querySelectorAll('#file-list [data-name]').forEach(function(el) { el.classList.remove('bg-primary/10', 'border-l-primary'); });
+        const active = document.querySelector('#file-list [data-name="' + pdfName + '"]');
         if (active) active.classList.add('bg-primary/10', 'border-l-primary');
     }
 
