@@ -1,7 +1,10 @@
 // ============================================================
 // MAIN APP ENTRY POINT
 // ============================================================
-const App = (function() {
+var App = (function() {
+    if (typeof App !== 'undefined' && App.init) {
+        return App;
+    }
     let currentPDFName = '';
     let isLoadingPDF = false;
 
