@@ -1,10 +1,5 @@
-// ============================================================
-// CONFIGURATION
-// ============================================================
-const CONFIG = {
-    GITHUB_OWNER: 'DelMedicalTW',
-    GITHUB_REPO: 'DelMedicalRelease',
-    PROXY_URL: 'https://pdf-review-proxy.mmuqeem.workers.dev',
-    ISSUE_LABEL_PREFIX: 'pdf-review',
-    PDF_SCALE: 1.5,
-};
+var PROXY = 'https://pdf-review-proxy.mmuqeem.workers.dev';
+var STORAGE_KEY = 'delmed-annotations-v2';
+var ISSUE_LABEL_PREFIX = 'pdf-review';
+var OWNER = 'DelMedicalTW';
+var REPO = 'DelMedicalRelease';
