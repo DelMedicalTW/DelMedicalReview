@@ -1,133 +1,110 @@
-// ============================================================
-// FILE BROWSER
-// ============================================================
 var Browser = (function() {
     var currentPath = '';
-    var fileList, breadcrumb, searchInput, backBtn;
 
-    function escapeHtml(str) {
-        var d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
+    function $(id) { return document.getElementById(id); }
+    function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+    function isDraft(n) { return /Rev_\d+[A-Za-z]/i.test(n); }
+
+    function getFolderInfo(path) {
+        var lower = (path || '').toLowerCase();
+        if (lower.indexOf('staging') !== -1) { return { label: 'STAGING', cls: 'badge-warning', icon: 'package-open', desc: 'Pre-release preparation' }; }
+        if (lower.indexOf('draft') !== -1) { return { label: 'DRAFTS', cls: 'badge-error', icon: 'pencil', desc: 'Work in progress' }; }
+        if (lower.indexOf('archive') !== -1) { return { label: 'ARCHIVE', cls: 'badge-ghost', icon: 'archive', desc: 'Historical documents' }; }
+        if (lower.indexOf('service') !== -1) { return { label: 'SERVICE', cls: 'badge-info', icon: 'wrench', desc: 'Service documentation' }; }
+        if (lower.indexOf('user') !== -1) { return { label: 'USER', cls: 'badge-success', icon: 'users', desc: 'User documentation' }; }
+        return null;
     }
 
-    function isDraft(filename) {
-        return /Rev_\d+[A-Za-z]/i.test(filename);
-    }
-
-    function updateBreadcrumb() {
-        if (!breadcrumb) return;
-        var parts = currentPath ? currentPath.split('/') : [];
-        var html = '<li><a href="#" data-path="">DelMedicalRelease</a></li>';
-        parts.forEach(function(part, i) {
-            var subpath = parts.slice(0, i + 1).join('/');
-            html += '<li><a href="#" data-path="' + subpath + '">' + escapeHtml(part) + '</a></li>';
-        });
-        breadcrumb.innerHTML = '<ul>' + html + '</ul>';
-        breadcrumb.querySelectorAll('a[data-path]').forEach(function(a) {
-            a.addEventListener('click', function(e) {
-                e.preventDefault();
-                loadDirectory(a.dataset.path);
-            });
-        });
-    }
-
-    async function loadDirectory(path) {
-        if (!fileList) return;
-        fileList.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Loading...</div>';
+    async function loadDir(path) {
+        var fl = $('file-list');
+        if (!fl) { return; }
+        fl.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm"><span class="loading loading-spinner loading-sm"></span> Loading...</div>';
         currentPath = path;
-        updateBreadcrumb();
-
         try {
             var contents = await API.fetchContents(path);
             if (!Array.isArray(contents)) {
-                fileList.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Not a directory.</div>';
+                fl.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Not a directory.</div>';
                 return;
             }
-
             var folders = contents.filter(function(c) { return c.type === 'dir'; }).sort(function(a, b) { return a.name.localeCompare(b.name); });
             var pdfs = contents.filter(function(c) { return c.type === 'file' && c.name.toLowerCase().endsWith('.pdf'); }).sort(function(a, b) { return a.name.localeCompare(b.name); });
-
-            if (!folders.length && !pdfs.length) {
-                fileList.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">No folders or PDFs found.</div>';
-                return;
+            var h = '';
+            var fi = getFolderInfo(path);
+            if (fi) {
+                h = h + '<div class="px-3 py-2 bg-base-300/50 border-b border-base-300">';
+                h = h + '<div class="flex items-center gap-2">';
+                h = h + '<span class="badge ' + fi.cls + ' badge-sm gap-1"><i data-lucide="' + fi.icon + '" class="w-3 h-3"></i> ' + fi.label + '</span>';
+                h = h + '<span class="text-xs text-base-content/60">' + fi.desc + '</span>';
+                h = h + '</div></div>';
             }
-
-            var html = '';
-            folders.forEach(function(folder) {
-                html += '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 border-l-3 border-transparent select-none" data-path="' + folder.path + '">' +
-                    '<i data-lucide="folder" class="w-4 h-4 flex-shrink-0 text-warning"></i>' +
-                    '<span class="truncate">' + escapeHtml(folder.name) + '</span></div>';
+            folders.forEach(function(f) {
+                var ffi = getFolderInfo(f.path);
+                var badge = ffi ? '<span class="badge ' + ffi.cls + ' badge-xs ml-auto flex-shrink-0">' + ffi.label + '</span>' : '';
+                h = h + '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none" data-path="' + esc(f.path) + '">';
+                h = h + '<i data-lucide="folder" class="w-4 h-4 flex-shrink-0 text-warning"></i>';
+                h = h + '<span class="truncate">' + esc(f.name) + '</span>' + badge + '</div>';
             });
-            pdfs.forEach(function(pdf) {
-                var draft = isDraft(pdf.name);
-                var badge = draft ? '<span class="badge badge-warning badge-xs ml-auto flex-shrink-0">DRAFT</span>' : '<span class="badge badge-success badge-xs ml-auto flex-shrink-0">RELEASE</span>';
-                var active = (App && App.getCurrentPDFName() === pdf.name) ? ' bg-primary/10 border-l-primary' : '';
-                html += '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 border-l-3 border-transparent' + active + ' select-none" data-path="' + pdf.path + '" data-name="' + escapeHtml(pdf.name) + '">' +
-                    '<i data-lucide="file-text" class="w-4 h-4 flex-shrink-0 text-error"></i>' +
-                    '<span class="truncate">' + escapeHtml(pdf.name) + '</span>' + badge + '</div>';
+            pdfs.forEach(function(p) {
+                var draft = isDraft(p.name);
+                var pfi = getFolderInfo(currentPath);
+                var badgeHtml = '';
+                if (draft) {
+                    badgeHtml = '<span class="badge badge-error badge-xs ml-auto flex-shrink-0">DRAFT</span>';
+                } else if (pfi) {
+                    badgeHtml = '<span class="badge ' + pfi.cls + ' badge-xs ml-auto flex-shrink-0">' + pfi.label + '</span>';
+                }
+                var active = '';
+                if (App && App.getCurrentPDFName && App.getCurrentPDFName() === p.name) {
+                    active = ' active-file';
+                }
+                h = h + '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none' + active + '" data-path="' + esc(p.path) + '" data-name="' + esc(p.name) + '">';
+                h = h + '<i data-lucide="file-text" class="w-4 h-4 flex-shrink-0 text-error"></i>';
+                h = h + '<span class="truncate">' + esc(p.name) + '</span>' + badgeHtml + '</div>';
             });
-            fileList.innerHTML = html;
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-
-            fileList.querySelectorAll('[data-path]:not([data-name])').forEach(function(el) {
-                el.addEventListener('click', function() { loadDirectory(el.dataset.path); });
+            fl.innerHTML = h;
+            lucide.createIcons();
+            fl.querySelectorAll('.file-row[data-path]:not([data-name])').forEach(function(el) {
+                el.onclick = function() { loadDir(el.dataset.path); };
             });
-            fileList.querySelectorAll('[data-name]').forEach(function(el) {
-                el.addEventListener('click', function() {
-                    if (App) App.loadPDF(el.dataset.path, el.dataset.name);
-                });
+            fl.querySelectorAll('.file-row[data-name]').forEach(function(el) {
+                el.onclick = function() {
+                    if (App && App.loadPDF) { App.loadPDF(el.dataset.path, el.dataset.name); }
+                };
             });
-
-            if (backBtn) backBtn.disabled = !path;
+            var backBtn = $('back-btn');
+            if (backBtn) { backBtn.disabled = !path; }
         } catch (err) {
-            fileList.innerHTML = '<div class="text-center py-8 text-error text-sm">Error: ' + escapeHtml(err.message) + '</div>';
+            fl.innerHTML = '<div class="text-center py-8 text-error text-sm"><i data-lucide="alert-triangle" class="w-6 h-6 mx-auto mb-1"></i>' + esc(err.message) + '</div>';
+            lucide.createIcons();
         }
     }
 
-    function highlightActiveFile(pdfName) {
-        if (!fileList) return;
-        fileList.querySelectorAll('[data-name]').forEach(function(el) { el.classList.remove('bg-primary/10', 'border-l-primary'); });
-        var active = fileList.querySelector('[data-name="' + pdfName + '"]');
-        if (active) active.classList.add('bg-primary/10', 'border-l-primary');
+    function highlightFile(name) {
+        var fl = $('file-list');
+        if (!fl) { return; }
+        fl.querySelectorAll('.active-file').forEach(function(el) { el.classList.remove('active-file'); });
+        var el = fl.querySelector('[data-name="' + name + '"]');
+        if (el) { el.classList.add('active-file'); }
     }
 
-    // Initialize DOM references
-    function init() {
-        fileList = document.getElementById('file-list');
-        breadcrumb = document.getElementById('breadcrumb');
-        searchInput = document.getElementById('search-input');
-        backBtn = document.getElementById('back-btn');
-
-        if (backBtn) backBtn.addEventListener('click', function() {
-            if (!currentPath) return;
-            var parent = currentPath.split('/').slice(0, -1).join('/');
-            loadDirectory(parent || '');
+    // Event wiring
+    $('back-btn').onclick = function() {
+        if (currentPath) { loadDir(currentPath.split('/').slice(0, -1).join('/') || ''); }
+    };
+    $('search-input').oninput = function(e) {
+        var q = e.target.value.toLowerCase();
+        var fl = $('file-list');
+        if (!fl) { return; }
+        fl.querySelectorAll('.file-row').forEach(function(el) {
+            var span = el.querySelector('.truncate');
+            var name = span ? span.textContent : '';
+            el.style.display = name.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
         });
-
-        if (searchInput) searchInput.addEventListener('input', function(e) {
-            var query = e.target.value.toLowerCase();
-            (fileList || document).querySelectorAll('[data-name]').forEach(function(el) {
-                var name = (el.querySelector('.truncate') ? el.querySelector('.truncate').textContent : '').toLowerCase();
-                el.style.display = name.indexOf(query) !== -1 ? '' : 'none';
-            });
-            (fileList || document).querySelectorAll('[data-path]:not([data-name])').forEach(function(el) {
-                var name = (el.querySelector('.truncate') ? el.querySelector('.truncate').textContent : '').toLowerCase();
-                el.style.display = name.indexOf(query) !== -1 ? '' : 'none';
-            });
-        });
-    }
-
-    // Initialize on DOM ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
+    };
 
     return {
-        loadDirectory: loadDirectory,
-        highlightActiveFile: highlightActiveFile,
-        getCurrentPath: function() { return currentPath; },
+        loadDir: loadDir,
+        highlightFile: highlightFile,
+        getCurrentPath: function() { return currentPath; }
     };
 })();
