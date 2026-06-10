@@ -5,24 +5,77 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Del Medical - PDF Review Portal</title>
     
-    <!-- Tailwind CSS + DaisyUI -->
-    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <!-- DaisyUI -->
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" />
+    <!-- Tailwind -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    
     <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    
     <!-- Fabric.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     
-    <!-- Custom CSS -->
-    <link href="css/review.css" rel="stylesheet">
+    <style>
+        .page-container {
+            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
+        }
+        [data-tool].active {
+            background-color: oklch(var(--p)) !important;
+            color: oklch(var(--pc)) !important;
+            font-weight: 600;
+        }
+        .color-btn {
+            transition: all 0.15s ease;
+        }
+        .color-btn:hover {
+            transform: scale(1.15);
+        }
+        .color-btn.selected {
+            border-color: white !important;
+            box-shadow: 0 0 0 2px oklch(var(--p));
+        }
+        #file-list > div {
+            border-left: 3px solid transparent;
+            transition: background 0.1s;
+        }
+        #file-list > div:hover {
+            background-color: oklch(var(--b3) / 0.7);
+        }
+        #file-list > div.bg-primary\/10 {
+            border-left-color: oklch(var(--p));
+        }
+        .annotation-layer {
+            pointer-events: auto !important;
+        }
+        #quote-popup {
+            transition: background 0.15s, color 0.15s;
+        }
+        #browser-panel, #annotation-sidebar {
+            transition: width 0.3s ease, min-width 0.3s ease;
+        }
+        #file-list::-webkit-scrollbar,
+        #pdf-scroll-container::-webkit-scrollbar,
+        #annotation-list::-webkit-scrollbar {
+            width: 6px;
+        }
+        #file-list::-webkit-scrollbar-thumb,
+        #pdf-scroll-container::-webkit-scrollbar-thumb,
+        #annotation-list::-webkit-scrollbar-thumb {
+            background: oklch(var(--b3));
+            border-radius: 3px;
+        }
+        #toast {
+            animation: slideUp 0.3s ease;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
-    
+
     <!-- ===== NAVBAR ===== -->
     <nav class="navbar bg-base-200 border-b border-base-300 px-4 py-2 flex-shrink-0 z-10 min-h-0">
         <div class="flex-1 flex items-center gap-3">
@@ -30,9 +83,7 @@
             <span class="text-primary font-bold text-lg whitespace-nowrap">Del Medical PDF Review</span>
             <span class="text-base-content/30">|</span>
             <div class="breadcrumbs text-sm overflow-hidden" id="breadcrumb">
-                <ul>
-                    <li><a href="#" data-path="">DelMedicalRelease</a></li>
-                </ul>
+                <ul><li><a href="#" data-path="">DelMedicalRelease</a></li></ul>
             </div>
         </div>
         <div class="flex-none flex gap-1">
@@ -45,11 +96,11 @@
         </div>
     </nav>
 
-    <!-- ===== MAIN CONTENT ===== -->
+    <!-- ===== MAIN ===== -->
     <div class="flex flex-1 overflow-hidden" id="main-container">
         
-        <!-- File Browser Panel -->
-        <aside class="w-80 min-w-[320px] bg-base-200 border-r border-base-300 flex flex-col overflow-hidden transition-all duration-300" id="browser-panel">
+        <!-- File Browser -->
+        <aside class="w-80 min-w-[320px] bg-base-200 border-r border-base-300 flex flex-col overflow-hidden" id="browser-panel">
             <div class="p-3 border-b border-base-300 flex items-center justify-between flex-shrink-0">
                 <h3 class="font-semibold text-sm flex items-center gap-2">
                     <i data-lucide="folder-open" class="w-4 h-4"></i> Documents
@@ -68,41 +119,24 @@
         </aside>
 
         <!-- PDF Viewer -->
-        <main class="flex-1 flex flex-col overflow-hidden" id="viewer-panel">
-            <!-- Annotation Toolbar -->
-            <div class="bg-base-200 border-b border-base-300 px-3 py-2 flex items-center gap-2 flex-shrink-0 flex-wrap hidden" id="annotation-toolbar">
+        <main class="flex-1 flex flex-col overflow-hidden">
+            <div class="bg-base-200 border-b border-base-300 px-3 py-2 items-center gap-2 flex-shrink-0 flex-wrap hidden" id="annotation-toolbar">
                 <div class="join">
-                    <button class="join-item btn btn-sm btn-ghost active" data-tool="select">
-                        <i data-lucide="mouse-pointer-2" class="w-4 h-4"></i> Select
-                    </button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="highlight">
-                        <i data-lucide="highlighter" class="w-4 h-4"></i> Highlight
-                    </button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="draw">
-                        <i data-lucide="pen" class="w-4 h-4"></i> Draw
-                    </button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="rectangle">
-                        <i data-lucide="square" class="w-4 h-4"></i> Rect
-                    </button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="comment">
-                        <i data-lucide="sticky-note" class="w-4 h-4"></i> Note
-                    </button>
+                    <button class="join-item btn btn-sm btn-ghost active" data-tool="select"><i data-lucide="mouse-pointer-2" class="w-4 h-4"></i> Select</button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="highlight"><i data-lucide="highlighter" class="w-4 h-4"></i> Highlight</button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="draw"><i data-lucide="pen" class="w-4 h-4"></i> Draw</button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="rectangle"><i data-lucide="square" class="w-4 h-4"></i> Rect</button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="comment"><i data-lucide="sticky-note" class="w-4 h-4"></i> Note</button>
                 </div>
                 <span class="text-xs text-base-content/50 ml-2">Color:</span>
-                <span class="w-6 h-6 rounded-full border-2 border-white shadow-[0_0_0_2px_var(--fallback-p,oklch(var(--p)))] cursor-pointer selected color-btn" data-color="rgba(255,213,79,0.4)" style="background:#ffd54f;"></span>
+                <span class="w-6 h-6 rounded-full border-2 cursor-pointer color-btn selected" data-color="rgba(255,213,79,0.4)" style="background:#ffd54f;"></span>
                 <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(88,166,255,0.4)" style="background:#58a6ff;"></span>
                 <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(63,185,80,0.4)" style="background:#3fb950;"></span>
                 <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(248,81,73,0.4)" style="background:#f85149;"></span>
                 <div class="flex-1"></div>
-                <button class="btn btn-ghost btn-sm" id="clear-page-annotations">
-                    <i data-lucide="trash-2" class="w-4 h-4"></i> Clear Page
-                </button>
-                <button class="btn btn-primary btn-sm" id="save-annotations-btn">
-                    <i data-lucide="save" class="w-4 h-4"></i> Save All
-                </button>
+                <button class="btn btn-ghost btn-sm" id="clear-page-annotations"><i data-lucide="trash-2" class="w-4 h-4"></i> Clear Page</button>
+                <button class="btn btn-primary btn-sm" id="save-annotations-btn"><i data-lucide="save" class="w-4 h-4"></i> Save All</button>
             </div>
-            
-            <!-- PDF Canvas Area -->
             <div class="flex-1 overflow-y-auto bg-[#333] relative flex flex-col items-center p-5 gap-4" id="pdf-scroll-container">
                 <div class="flex-1 flex flex-col items-center justify-center text-base-content/40 text-center p-10" id="no-pdf-message">
                     <i data-lucide="file-search" class="w-16 h-16 mb-4 opacity-40"></i>
@@ -113,7 +147,7 @@
         </main>
 
         <!-- Annotation Sidebar -->
-        <aside class="w-[380px] min-w-[380px] bg-base-200 border-l border-base-300 flex flex-col overflow-hidden transition-all duration-300" id="annotation-sidebar">
+        <aside class="w-[380px] min-w-[380px] bg-base-200 border-l border-base-300 flex flex-col overflow-hidden" id="annotation-sidebar">
             <div class="p-3 border-b border-base-300 flex items-center justify-between flex-shrink-0">
                 <h3 class="font-semibold text-sm flex items-center gap-2">
                     <i data-lucide="message-square-text" class="w-4 h-4"></i> Comments &amp; Annotations
@@ -121,14 +155,12 @@
                 <span class="text-xs text-base-content/50" id="annotation-count">0</span>
             </div>
             <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-2" id="annotation-list">
-                <div class="text-center py-8 text-base-content/40 text-sm">
-                    Select a PDF and use the toolbar to add annotations.
-                </div>
+                <div class="text-center py-8 text-base-content/40 text-sm">Select a PDF to begin.</div>
             </div>
         </aside>
     </div>
 
-    <!-- Toast Notification -->
+    <!-- Toast -->
     <div class="toast toast-end toast-bottom z-50 hidden" id="toast">
         <div class="alert" id="toast-alert">
             <i data-lucide="check-circle" class="w-4 h-4 hidden" id="toast-icon-success"></i>
@@ -143,18 +175,612 @@
         <span>Quote &amp; Comment</span>
     </div>
 
-    <!-- Scripts (load order matters) -->
-    <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/browser.js"></script>
-    <script src="js/annotations.js"></script>
-    <script src="js/pdf-viewer.js"></script>
-    <script src="js/sidebar.js"></script>
-    <script src="js/review.js"></script>
-    
-    <!-- Initialize Lucide Icons -->
     <script>
+    // ============================================================
+    // EVERYTHING IN ONE SCRIPT — NO MODULE DEPENDENCY ISSUES
+    // ============================================================
+    (function() {
+        // --- CONFIG ---
+        const PROXY = 'https://pdf-review-proxy.mmuqeem.workers.dev';
+        const OWNER = 'DelMedicalTW';
+        const REPO = 'DelMedicalRelease';
+        const LABEL_PREFIX = 'pdf-review';
+        const SCALE = 1.5;
+
+        // --- STATE ---
+        let currentPath = '';
+        let currentPDFName = '';
+        let pdfDoc = null;
+        let currentTool = 'select';
+        let currentColor = 'rgba(255,213,79,0.4)';
+        let annotations = [];
+        let fabricCanvases = {};
+        let pageContainers = {};
+        let isDrawingRect = false;
+        let rectStart = null;
+        let tempRect = null;
+        let isLoadingPDF = false;
+
+        // --- DOM ---
+        const $ = id => document.getElementById(id);
+        const toastEl = $('toast');
+        const toastAlert = $('toast-alert');
+        const toastMsg = $('toast-message');
+        const toastIconOk = $('toast-icon-success');
+        const toastIconErr = $('toast-icon-error');
+        const fileList = $('file-list');
+        const breadcrumb = $('breadcrumb');
+        const searchInput = $('search-input');
+        const backBtn = $('back-btn');
+        const pdfScroll = $('pdf-scroll-container');
+        const noPdfMsg = $('no-pdf-message');
+        const toolbar = $('annotation-toolbar');
+        const quotePopup = $('quote-popup');
+        const annList = $('annotation-list');
+        const annCount = $('annotation-count');
+        const toggleBrowser = $('toggle-browser');
+        const toggleAnn = $('toggle-annotations');
+        const clearPageBtn = $('clear-page-annotations');
+        const saveBtn = $('save-annotations-btn');
+
+        let toastTimer;
+
+        // --- UTILS ---
+        function toast(msg, type) {
+            type = type || 'success';
+            toastMsg.textContent = msg;
+            toastAlert.className = 'alert ' + (type === 'error' ? 'alert-error' : 'alert-success');
+            if (toastIconOk) toastIconOk.classList.toggle('hidden', type !== 'success');
+            if (toastIconErr) toastIconErr.classList.toggle('hidden', type !== 'error');
+            toastEl.classList.remove('hidden');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toastEl.classList.add('hidden'), 3000);
+        }
+
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        function isDraft(name) {
+            return /Rev_\d+[A-Za-z]/i.test(name);
+        }
+
+        // --- GITHUB API ---
+        async function apiFetch(url, opts) {
+            opts = opts || {};
+            let u = url.startsWith('http') ? new URL(url) : null;
+            let proxyUrl = u ? (PROXY + u.pathname + u.search) : (PROXY + url);
+            const resp = await fetch(proxyUrl, {
+                headers: Object.assign({ 'Accept': 'application/vnd.github.v3+json' }, opts.headers || {}),
+                method: opts.method || 'GET',
+                body: opts.body || undefined,
+            });
+            if (!resp.ok) {
+                let err = {};
+                try { err = await resp.json(); } catch (e) {}
+                throw new Error('API ' + resp.status + ': ' + (err.message || resp.statusText));
+            }
+            return resp.json();
+        }
+
+        async function fetchContents(path) { return apiFetch('/contents/' + path); }
+
+        async function fetchPDF(path) {
+            const r = await fetch(PROXY + '/raw/master/' + path);
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.arrayBuffer();
+        }
+
+        async function fetchIssues(pdfName) {
+            const label = LABEL_PREFIX + ':' + encodeURIComponent(pdfName);
+            let all = [], page = 1;
+            while (true) {
+                const batch = await apiFetch('/issues?labels=' + label + '&state=all&per_page=100&page=' + page);
+                if (!batch.length) break;
+                all = all.concat(batch);
+                page++;
+            }
+            return all;
+        }
+
+        async function createIssue(pdfName, pageNum, data) {
+            const label = LABEL_PREFIX + ':' + encodeURIComponent(pdfName);
+            const title = '[' + pdfName + '] Page ' + pageNum + ': ' + data.type + ' annotation';
+            const body = '<!-- delmed-pdf-annotation -->\n**PDF:** ' + pdfName + '\n**Page:** ' + pageNum +
+                '\n**Type:** ' + data.type + '\n**Color:** ' + (data.color || 'default') +
+                '\n**Data:** ```json\n' + JSON.stringify(data, null, 2) + '\n```\n' +
+                (data.quotedText ? '\n**Quoted Text:**\n> ' + data.quotedText + '\n' : '') +
+                (data.comment || '');
+            return apiFetch('/issues', { method: 'POST', body: JSON.stringify({ title, body, labels: [label] }) });
+        }
+
+        // --- FILE BROWSER ---
+        function updateBreadcrumb() {
+            const parts = currentPath ? currentPath.split('/') : [];
+            let h = '<li><a href="#" data-path="">DelMedicalRelease</a></li>';
+            parts.forEach((p, i) => {
+                const sp = parts.slice(0, i + 1).join('/');
+                h += '<li><a href="#" data-path="' + sp + '">' + esc(p) + '</a></li>';
+            });
+            breadcrumb.innerHTML = '<ul>' + h + '</ul>';
+            breadcrumb.querySelectorAll('a[data-path]').forEach(a => {
+                a.addEventListener('click', e => { e.preventDefault(); loadDir(a.dataset.path); });
+            });
+        }
+
+        async function loadDir(path) {
+            fileList.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Loading...</div>';
+            currentPath = path;
+            updateBreadcrumb();
+            try {
+                const contents = await fetchContents(path);
+                if (!Array.isArray(contents)) {
+                    fileList.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Not a directory.</div>';
+                    return;
+                }
+                const folders = contents.filter(c => c.type === 'dir').sort((a, b) => a.name.localeCompare(b.name));
+                const pdfs = contents.filter(c => c.type === 'file' && c.name.toLowerCase().endsWith('.pdf')).sort((a, b) => a.name.localeCompare(b.name));
+                if (!folders.length && !pdfs.length) {
+                    fileList.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Empty.</div>';
+                    return;
+                }
+                let h = '';
+                folders.forEach(f => {
+                    h += '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 border-l-3 border-transparent select-none" data-path="' + f.path + '">' +
+                        '<i data-lucide="folder" class="w-4 h-4 flex-shrink-0 text-warning"></i><span class="truncate">' + esc(f.name) + '</span></div>';
+                });
+                pdfs.forEach(p => {
+                    const draft = isDraft(p.name);
+                    const badge = draft ? '<span class="badge badge-warning badge-xs ml-auto flex-shrink-0">DRAFT</span>' : '<span class="badge badge-success badge-xs ml-auto flex-shrink-0">RELEASE</span>';
+                    const active = currentPDFName === p.name ? ' bg-primary/10 border-l-primary' : '';
+                    h += '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 border-l-3 border-transparent' + active + ' select-none" data-path="' + p.path + '" data-name="' + esc(p.name) + '">' +
+                        '<i data-lucide="file-text" class="w-4 h-4 flex-shrink-0 text-error"></i><span class="truncate">' + esc(p.name) + '</span>' + badge + '</div>';
+                });
+                fileList.innerHTML = h;
+                lucide.createIcons();
+                fileList.querySelectorAll('[data-path]:not([data-name])').forEach(el => el.addEventListener('click', () => loadDir(el.dataset.path)));
+                fileList.querySelectorAll('[data-name]').forEach(el => el.addEventListener('click', () => loadPDF(el.dataset.path, el.dataset.name)));
+                backBtn.disabled = !path;
+            } catch (err) {
+                fileList.innerHTML = '<div class="text-center py-8 text-error text-sm">Error: ' + esc(err.message) + '</div>';
+            }
+        }
+
+        backBtn.addEventListener('click', () => {
+            if (!currentPath) return;
+            const parent = currentPath.split('/').slice(0, -1).join('/');
+            loadDir(parent || '');
+        });
+
+        searchInput.addEventListener('input', e => {
+            const q = e.target.value.toLowerCase();
+            fileList.querySelectorAll('[data-name]').forEach(el => {
+                const n = (el.querySelector('.truncate')?.textContent || '').toLowerCase();
+                el.style.display = n.includes(q) ? '' : 'none';
+            });
+            fileList.querySelectorAll('[data-path]:not([data-name])').forEach(el => {
+                const n = (el.querySelector('.truncate')?.textContent || '').toLowerCase();
+                el.style.display = n.includes(q) ? '' : 'none';
+            });
+        });
+
+        function highlightFile(name) {
+            fileList.querySelectorAll('[data-name]').forEach(el => el.classList.remove('bg-primary/10', 'border-l-primary'));
+            const a = fileList.querySelector('[data-name="' + name + '"]');
+            if (a) a.classList.add('bg-primary/10', 'border-l-primary');
+        }
+
+        // --- ANNOTATION TOOLS ---
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+            const btn = document.querySelector('[data-tool="' + tool + '"]');
+            if (btn) btn.classList.add('active');
+            Object.values(fabricCanvases).forEach(fc => {
+                if (!fc) return;
+                fc.isDrawingMode = (tool === 'draw');
+                fc.selection = (tool === 'select' || tool === 'highlight' || tool === 'comment');
+                if (tool === 'draw') {
+                    fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)');
+                    fc.freeDrawingBrush.width = 2;
+                }
+            });
+        }
+
+        function setColor(color) {
+            currentColor = color;
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
+            const s = document.querySelector('[data-color="' + color + '"]');
+            if (s) s.classList.add('selected');
+            if (currentTool === 'draw') {
+                Object.values(fabricCanvases).forEach(fc => {
+                    if (fc) fc.freeDrawingBrush.color = color.replace(/[\d.]+\)$/, '1)');
+                });
+            }
+        }
+
+        function createFabricCanvas(pageNum, canvasEl) {
+            const fc = new fabric.Canvas(canvasEl, { selection: true, isDrawingMode: false, renderOnAddRemove: true });
+            fc.selection = true;
+            fc.on('object:modified', () => saveState(pageNum));
+            fc.on('path:created', () => saveState(pageNum));
+            fabricCanvases[pageNum] = fc;
+            setTool(currentTool);
+            return fc;
+        }
+
+        function registerPage(pageNum, container) {
+            pageContainers[pageNum] = container;
+            container.addEventListener('mouseup', e => handleHighlight(e, pageNum));
+            container.addEventListener('dblclick', e => handleSticky(e, pageNum));
+        }
+
+        function handleHighlight(e, pageNum) {
+            if (currentTool !== 'highlight') return;
+            const sel = window.getSelection();
+            const text = sel.toString().trim();
+            if (!text) return;
+            const container = pageContainers[pageNum];
+            if (!container || !container.contains(sel.anchorNode)) return;
+            const range = sel.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            quotePopup.style.display = 'flex';
+            quotePopup.style.left = Math.max(10, rect.left + rect.width / 2 - 70) + 'px';
+            quotePopup.style.top = Math.max(10, rect.bottom + 10) + 'px';
+            quotePopup.dataset.pageNum = pageNum;
+            quotePopup.dataset.quotedText = text;
+
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            const cr = container.getBoundingClientRect();
+            const rects = range.getClientRects();
+            for (let i = 0; i < rects.length; i++) {
+                const r = rects[i];
+                fc.add(new fabric.Rect({
+                    left: r.left - cr.left, top: r.top - cr.top,
+                    width: r.width, height: r.height,
+                    fill: currentColor, selectable: true, evented: true, opacity: 0.5,
+                }));
+            }
+            fc.renderAll();
+            saveState(pageNum);
+            setTimeout(() => { quotePopup.style.display = 'none'; }, 4000);
+        }
+
+        quotePopup.addEventListener('click', async () => {
+            const pageNum = parseInt(quotePopup.dataset.pageNum);
+            const text = quotePopup.dataset.quotedText;
+            const comment = prompt('Add a comment to this quote:', '');
+            if (comment === null) return;
+            const ann = { type: 'quote', page: pageNum, quotedText: text, comment: comment || '', color: currentColor, timestamp: new Date().toISOString() };
+            annotations.push(ann);
+            try {
+                await createIssue(currentPDFName, pageNum, ann);
+                toast('Quote saved', 'success');
+            } catch (err) {
+                toast('Failed to save: ' + err.message, 'error');
+            }
+            renderAnnList();
+            quotePopup.style.display = 'none';
+        });
+
+        function handleSticky(e, pageNum) {
+            if (currentTool !== 'comment') return;
+            const container = pageContainers[pageNum];
+            if (!container) return;
+            const cr = container.getBoundingClientRect();
+            const x = e.clientX - cr.left;
+            const y = e.clientY - cr.top;
+            const comment = prompt('Add a sticky note:', '');
+            if (!comment) return;
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            const circle = new fabric.Circle({ left: x - 10, top: y - 10, radius: 10, fill: '#3fb950', opacity: 0.7, selectable: true });
+            const txt = new fabric.Text('📝', { left: x - 10, top: y - 12, fontSize: 16, selectable: false });
+            fc.add(new fabric.Group([circle, txt], { left: x - 10, top: y - 10, selectable: true }));
+            fc.renderAll();
+            const ann = { type: 'comment', page: pageNum, comment, x: Math.round(x), y: Math.round(y), timestamp: new Date().toISOString() };
+            annotations.push(ann);
+            saveState(pageNum);
+            createIssue(currentPDFName, pageNum, ann).then(() => toast('Note saved', 'success')).catch(err => toast('Local only: ' + err.message, 'error'));
+            renderAnnList();
+        }
+
+        // Rectangle drawing
+        pdfScroll.addEventListener('mousedown', e => {
+            if (currentTool !== 'rectangle') return;
+            const target = e.target.closest('.page-container');
+            if (!target) return;
+            const pageNum = parseInt(target.dataset.page);
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            const ptr = fc.getPointer(e);
+            isDrawingRect = true;
+            rectStart = { x: ptr.x, y: ptr.y };
+            tempRect = new fabric.Rect({
+                left: ptr.x, top: ptr.y, width: 0, height: 0,
+                fill: 'transparent', stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
+                strokeWidth: 2, selectable: false, evented: false,
+            });
+            fc.add(tempRect);
+        });
+
+        pdfScroll.addEventListener('mousemove', e => {
+            if (!isDrawingRect || !tempRect) return;
+            const target = e.target.closest('.page-container');
+            if (!target) return;
+            const fc = fabricCanvases[parseInt(target.dataset.page)];
+            if (!fc) return;
+            const ptr = fc.getPointer(e);
+            const w = ptr.x - rectStart.x;
+            const h = ptr.y - rectStart.y;
+            tempRect.set({ left: w > 0 ? rectStart.x : ptr.x, top: h > 0 ? rectStart.y : ptr.y, width: Math.abs(w), height: Math.abs(h) });
+            fc.renderAll();
+        });
+
+        pdfScroll.addEventListener('mouseup', e => {
+            if (!isDrawingRect) return;
+            isDrawingRect = false;
+            if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
+                tempRect.set({ selectable: true, evented: true });
+                const target = e.target.closest('.page-container');
+                if (target) saveState(parseInt(target.dataset.page));
+            } else if (tempRect) {
+                try { tempRect.canvas.remove(tempRect); } catch (er) {}
+            }
+            tempRect = null;
+            rectStart = null;
+        });
+
+        function saveState(pageNum) {
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            const objects = fc.getObjects().map(o => o.toJSON());
+            const idx = annotations.findIndex(a => a.type === 'drawing' && a.page === pageNum);
+            if (idx >= 0) {
+                annotations[idx].objects = objects;
+                annotations[idx].timestamp = new Date().toISOString();
+            } else if (objects.length > 0) {
+                annotations.push({ type: 'drawing', page: pageNum, objects, color: currentColor, timestamp: new Date().toISOString() });
+            }
+            renderAnnList();
+        }
+
+        function restorePage(pageNum) {
+            const fc = fabricCanvases[pageNum];
+            if (!fc) return;
+            fc.clear();
+            annotations.filter(a => a.page === pageNum && a.type === 'drawing' && a.objects?.length).forEach(ann => {
+                fabric.util.enlivenObjects(ann.objects, objects => {
+                    objects.forEach(o => fc.add(o));
+                    fc.renderAll();
+                });
+            });
+        }
+
+        function disposeAnnotations() {
+            Object.values(fabricCanvases).forEach(fc => { try { fc.dispose(); } catch (e) {} });
+            fabricCanvases = {};
+            pageContainers = {};
+            annotations = [];
+            isDrawingRect = false;
+            rectStart = null;
+            tempRect = null;
+        }
+
+        function findVisiblePage() {
+            const cr = pdfScroll.getBoundingClientRect();
+            let best = null, bestOverlap = 0;
+            Object.entries(pageContainers).forEach(([pn, el]) => {
+                const r = el.getBoundingClientRect();
+                const o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top));
+                if (o > bestOverlap) { bestOverlap = o; best = parseInt(pn); }
+            });
+            return best;
+        }
+
+        // --- SIDEBAR ---
+        function renderAnnList() {
+            if (!annotations.length) {
+                annList.innerHTML = '<div class="text-center py-8 text-base-content/40 text-sm"><i data-lucide="message-circle" class="w-10 h-10 mx-auto mb-2 opacity-40"></i><p>No annotations yet.</p></div>';
+                annCount.textContent = '0';
+                lucide.createIcons();
+                return;
+            }
+            annotations.sort((a, b) => a.page - b.page);
+            annCount.textContent = annotations.length;
+            const types = {
+                highlight: { l: 'Highlight', c: 'badge-warning', i: 'highlighter' },
+                quote: { l: 'Quote', c: 'badge-secondary', i: 'quote' },
+                drawing: { l: 'Drawing', c: 'badge-info', i: 'pen' },
+                comment: { l: 'Note', c: 'badge-success', i: 'sticky-note' },
+                rectangle: { l: 'Rectangle', c: 'badge-info', i: 'square' },
+            };
+            annList.innerHTML = annotations.map(ann => {
+                const t = types[ann.type] || { l: ann.type, c: 'badge-ghost', i: 'pin' };
+                let body = '';
+                if (ann.quotedText) body += '<blockquote class="border-l-2 border-secondary pl-2 my-1 text-base-content/60 italic text-xs">' + esc(ann.quotedText) + '</blockquote>';
+                if (ann.comment) body += '<p class="text-sm">' + esc(ann.comment) + '</p>';
+                if (ann.type === 'drawing' && !ann.comment) body += '<p class="text-base-content/40 text-xs">Drawing</p>';
+                const link = ann.issueNumber
+                    ? '<a href="' + ann.issueUrl + '" target="_blank" class="text-info text-xs ml-auto hover:underline"><i data-lucide="external-link" class="w-3 h-3 inline"></i> #' + ann.issueNumber + '</a>'
+                    : '<span class="text-warning text-xs ml-auto"><i data-lucide="cloud-off" class="w-3 h-3 inline"></i> Unsaved</span>';
+                const resolved = ann.issueState === 'closed' ? '<span class="badge badge-success badge-xs ml-1">✓ Resolved</span>' : '';
+                return '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary" data-goto="' + ann.page + '">' +
+                    '<div class="card-body p-3"><div class="flex items-center gap-2 flex-wrap text-xs text-base-content/50">' +
+                    '<span class="badge badge-xs ' + t.c + '"><i data-lucide="' + t.i + '" class="w-3 h-3 inline"></i> ' + t.l + '</span>' +
+                    '<span>Page ' + ann.page + '</span>' + link + resolved + '</div>' +
+                    '<div class="mt-1">' + body + '</div>' +
+                    '<div class="text-xs text-base-content/40 mt-1">' + new Date(ann.timestamp).toLocaleString() + '</div></div></div>';
+            }).join('');
+            lucide.createIcons();
+            annList.querySelectorAll('[data-goto]').forEach(card => {
+                card.addEventListener('click', () => {
+                    const pn = parseInt(card.dataset.goto);
+                    const c = pageContainers[pn];
+                    if (c) {
+                        c.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        c.style.boxShadow = '0 0 0 4px var(--fallback-p, oklch(var(--p)))';
+                        setTimeout(() => { c.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)'; }, 1500);
+                    }
+                });
+            });
+        }
+
+        // --- PDF LOADING ---
+        async function loadPDF(path, name) {
+            if (isLoadingPDF) return;
+            isLoadingPDF = true;
+            currentPDFName = name;
+            highlightFile(name);
+            disposeAnnotations();
+            pdfDoc = null;
+            pdfScroll.innerHTML = '';
+            annList.innerHTML = '<div class="text-center py-8 text-base-content/40 text-sm">No annotations yet.</div>';
+            annCount.textContent = '0';
+            noPdfMsg.style.display = 'none';
+            toolbar.style.display = 'flex';
+            pdfScroll.innerHTML = '<div class="text-center py-10 text-base-content/50 text-sm">Loading PDF...</div>';
+
+            try {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                const data = await fetchPDF(path);
+                const header = String.fromCharCode.apply(null, new Uint8Array(data.slice(0, 5)));
+                if (!header.startsWith('%PDF')) throw new Error('Invalid PDF header: ' + header);
+
+                const task = pdfjsLib.getDocument({ data });
+                pdfDoc = await task.promise;
+                pdfScroll.innerHTML = '';
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const vp = page.getViewport({ scale: SCALE });
+                    const pc = document.createElement('div');
+                    pc.className = 'page-container relative shadow-lg bg-white flex-shrink-0';
+                    pc.style.width = vp.width + 'px';
+                    pc.style.height = vp.height + 'px';
+                    pc.dataset.page = i;
+
+                    const pCanvas = document.createElement('canvas');
+                    pCanvas.width = vp.width;
+                    pCanvas.height = vp.height;
+                    pCanvas.className = 'block';
+                    await page.render({ canvasContext: pCanvas.getContext('2d'), viewport: vp }).promise;
+                    pc.appendChild(pCanvas);
+
+                    const aCanvas = document.createElement('canvas');
+                    aCanvas.width = vp.width;
+                    aCanvas.height = vp.height;
+                    aCanvas.className = 'annotation-layer absolute top-0 left-0';
+                    aCanvas.style.width = vp.width + 'px';
+                    aCanvas.style.height = vp.height + 'px';
+                    pc.appendChild(aCanvas);
+
+                    createFabricCanvas(i, aCanvas);
+                    registerPage(i, pc);
+
+                    const label = document.createElement('div');
+                    label.className = 'absolute bottom-2 right-3 bg-black/60 text-white px-2 py-0.5 rounded text-xs pointer-events-none';
+                    label.textContent = 'Page ' + i;
+                    pc.appendChild(label);
+
+                    pdfScroll.appendChild(pc);
+                }
+
+                // Load existing annotations
+                try {
+                    const issues = await fetchIssues(name);
+                    const anns = [];
+                    issues.forEach(issue => {
+                        if (!issue.body?.includes('<!-- delmed-pdf-annotation -->')) return;
+                        const m = issue.body.match(/```json\n([\s\S]*?)\n```/);
+                        if (!m) return;
+                        try {
+                            const d = JSON.parse(m[1]);
+                            d.issueNumber = issue.number;
+                            d.issueState = issue.state;
+                            d.issueUrl = issue.html_url;
+                            anns.push(d);
+                        } catch (e) {}
+                    });
+                    annotations = anns;
+                    for (let i = 1; i <= pdfDoc.numPages; i++) restorePage(i);
+                    renderAnnList();
+                    if (anns.length) toast('Loaded ' + anns.length + ' annotations', 'success');
+                } catch (err) {
+                    console.warn('Annotation load:', err.message);
+                }
+
+                toast('Loaded ' + pdfDoc.numPages + ' pages', 'success');
+            } catch (err) {
+                console.error(err);
+                pdfScroll.innerHTML = '<div class="flex-1 flex flex-col items-center justify-center text-base-content/40 text-center p-10"><i data-lucide="alert-triangle" class="w-16 h-16 mb-4 text-error opacity-50"></i><h3 class="text-xl font-semibold text-error">Failed</h3><p class="mt-2 text-sm">' + esc(err.message) + '</p></div>';
+                lucide.createIcons();
+                toast('Failed: ' + err.message, 'error');
+            } finally {
+                isLoadingPDF = false;
+            }
+        }
+
+        // --- EVENT WIRING ---
+        document.querySelectorAll('[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+        document.querySelectorAll('.color-btn').forEach(b => b.addEventListener('click', () => setColor(b.dataset.color)));
+
+        clearPageBtn.addEventListener('click', () => {
+            const p = findVisiblePage();
+            if (!p) return;
+            const fc = fabricCanvases[p];
+            if (!fc) return;
+            fc.clear(); fc.renderAll();
+            annotations = annotations.filter(a => a.page !== p);
+            renderAnnList();
+            toast('Cleared page ' + p, 'success');
+        });
+
+        saveBtn.addEventListener('click', async () => {
+            let saved = 0, errs = 0;
+            for (const ann of annotations) {
+                if (ann.issueNumber) continue;
+                try {
+                    const issue = await createIssue(currentPDFName, ann.page, ann);
+                    ann.issueNumber = issue.number;
+                    ann.issueUrl = issue.html_url;
+                    saved++;
+                } catch (e) { errs++; }
+            }
+            if (saved && !errs) toast('Saved ' + saved, 'success');
+            else if (saved) toast('Saved ' + saved + ', ' + errs + ' failed', 'error');
+            else if (errs) toast('All ' + errs + ' failed', 'error');
+            else toast('Already saved', 'success');
+            renderAnnList();
+        });
+
+        toggleBrowser.addEventListener('click', () => {
+            const p = $('browser-panel');
+            p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0');
+        });
+        toggleAnn.addEventListener('click', () => {
+            const p = $('annotation-sidebar');
+            p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0');
+        });
+
+        document.addEventListener('click', e => {
+            if (!e.target.closest('#quote-popup') && currentTool !== 'highlight') {
+                quotePopup.style.display = 'none';
+            }
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') setTool('select');
+            if (e.key === 'h' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) setTool('highlight');
+            if (e.key === 'd' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) setTool('draw');
+        });
+
+        // --- START ---
         lucide.createIcons();
+        loadDir('').then(() => toast('Connected to DelMedicalRelease', 'success')).catch(err => toast('Failed: ' + err.message, 'error'));
+    })();
     </script>
 </body>
 </html>
