@@ -780,9 +780,14 @@
                     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
                 // Load PDF via proxy using /raw/ endpoint
+                // Add branch prefix - GitHub raw URLs need the branch name
                 var decodedPath = decodeURIComponent(contentsPath);
-                var proxyPDFUrl = API_BASE + '/raw/' + encodeURIComponent(decodedPath).replace(/%2F/g, '/');
+                // Prepend 'main' branch (or 'master' if your repo uses that)
+                var branchName = 'main';
+                var rawPath = branchName + '/' + decodedPath;
+                var proxyPDFUrl = API_BASE + '/raw/' + encodeURIComponent(rawPath).replace(/%2F/g, '/');
                 console.log('Loading PDF from:', proxyPDFUrl);
+                console.log('Original contents path:', contentsPath);
 
                 var loadingTask = pdfjsLib.getDocument({
                     url: proxyPDFUrl,
