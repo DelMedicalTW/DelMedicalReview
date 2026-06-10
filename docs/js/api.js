@@ -1,7 +1,11 @@
 // ============================================================
 // GITHUB API (via Cloudflare Proxy)
 // ============================================================
-const API = (function() {
+var API = (function() {
+    if (typeof API !== 'undefined' && API.fetchContents) {
+        return API;
+    }
+
     const BASE = CONFIG.PROXY_URL;
 
     async function githubFetch(url, options) {
@@ -35,11 +39,11 @@ const API = (function() {
     }
 
     return {
-        fetchContents(path) {
+        fetchContents: function(path) {
             return githubFetch('/contents/' + path);
         },
 
-        async fetchPDF(contentsPath) {
+        fetchPDF: async function(contentsPath) {
             const proxyPDFUrl = BASE + '/raw/master/' + contentsPath;
             const response = await fetch(proxyPDFUrl);
             if (!response.ok) {
@@ -48,7 +52,7 @@ const API = (function() {
             return response.arrayBuffer();
         },
 
-        async fetchIssuesForPDF(pdfName) {
+        fetchIssuesForPDF: async function(pdfName) {
             const label = CONFIG.ISSUE_LABEL_PREFIX + ':' + encodeURIComponent(pdfName);
             const allIssues = [];
             let page = 1;
@@ -62,10 +66,8 @@ const API = (function() {
             return allIssues;
         },
 
-        async createAnnotationIssue(pdfName, pageNum, annotationData) {
+        createAnnotationIssue: async function(pdfName, pageNum, annotationData) {
             const label = CONFIG.ISSUE_LABEL_PREFIX + ':' + encodeURIComponent(pdfName);
-            const typeIcons = { highlight: 'highlighter', quote: 'quote', drawing: 'pen', comment: 'sticky-note', rectangle: 'square' };
-            const icon = typeIcons[annotationData.type] || 'pin';
             const title = '[' + pdfName + '] Page ' + pageNum + ': ' + annotationData.type + ' annotation';
             const body = '<!-- delmed-pdf-annotation -->\n' +
                 '**PDF:** ' + pdfName + '\n' +
@@ -77,7 +79,7 @@ const API = (function() {
                 (annotationData.comment || '');
             return githubFetch('/issues', {
                 method: 'POST',
-                body: JSON.stringify({ title, body, labels: [label] }),
+                body: JSON.stringify({ title: title, body: body, labels: [label] }),
             });
         },
     };
