@@ -783,7 +783,7 @@
                 // Add branch prefix - GitHub raw URLs need the branch name
                 var decodedPath = decodeURIComponent(contentsPath);
                 // Prepend 'main' branch (or 'master' if your repo uses that)
-                var branchName = 'main';
+                var branchName = 'master';
                 var rawPath = branchName + '/' + decodedPath;
                 var proxyPDFUrl = API_BASE + '/raw/' + encodeURIComponent(rawPath).replace(/%2F/g, '/');
                 console.log('Loading PDF from:', proxyPDFUrl);
