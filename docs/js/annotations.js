@@ -34,7 +34,7 @@ var Annotations = (function() {
 
     async function syncToGitHub() {
         var pdfName = App.getCurrentPDFName();
-        if (!pdfName) { return; }
+        if (!pdfName) { return { synced: 0, updated: 0 }; }
         var anns = getAnnotations();
         var synced = 0;
         var updated = 0;
@@ -56,6 +56,7 @@ var Annotations = (function() {
         }
         setAnnotations(anns);
         saveLocal();
+        Sidebar.render(getAnnotations());
         return { synced: synced, updated: updated };
     }
 
@@ -67,7 +68,6 @@ var Annotations = (function() {
         setAnnotations(anns);
         saveLocal();
         Sidebar.render(getAnnotations());
-        // Auto-sync
         var pdfName = App.getCurrentPDFName();
         API.createAnnotationIssue(pdfName, ann).then(function(issue) {
             ann.issueNumber = issue.number;
@@ -259,10 +259,15 @@ var Annotations = (function() {
             var fc = fabricCanvases[pageNum];
             if (!fc) { return; }
             var rect = new fabric.Rect({
-                left: x - 22, top: y - 22,
-                width: 44, height: 44,
-                fill: '#fef08a', stroke: '#ca8a04',
-                strokeWidth: 2, rx: 4, ry: 4
+                left: x - 22,
+                top: y - 22,
+                width: 44,
+                height: 44,
+                fill: '#fef08a',
+                stroke: '#ca8a04',
+                strokeWidth: 2,
+                rx: 4,
+                ry: 4
             });
             fc.add(rect);
             fc.renderAll();
@@ -276,7 +281,7 @@ var Annotations = (function() {
         });
     }
 
-    function handleRectangleMouseDown(e) {
+    function handleRectDown(e) {
         if (currentTool !== 'rectangle') { return; }
         var target = e.target.closest('.page-wrapper');
         if (!target) { return; }
@@ -287,7 +292,10 @@ var Annotations = (function() {
         isDrawingRect = true;
         rectStart = { x: ptr.x, y: ptr.y };
         tempRect = new fabric.Rect({
-            left: ptr.x, top: ptr.y, width: 0, height: 0,
+            left: ptr.x,
+            top: ptr.y,
+            width: 0,
+            height: 0,
             fill: 'transparent',
             stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
             strokeWidth: 2,
@@ -296,7 +304,7 @@ var Annotations = (function() {
         fc.add(tempRect);
     }
 
-    function handleRectangleMouseMove(e) {
+    function handleRectMove(e) {
         if (!isDrawingRect || !tempRect) { return; }
         var target = e.target.closest('.page-wrapper');
         if (!target) { return; }
@@ -312,11 +320,17 @@ var Annotations = (function() {
         fc.renderAll();
     }
 
-    function handleRectangleMouseUp(e) {
-        if (!isDrawingRect || currentTool !== 'rectangle') { isDrawingRect = false; return; }
+    function handleRectUp(e) {
+        if (!isDrawingRect || currentTool !== 'rectangle') {
+            isDrawingRect = false;
+            return;
+        }
         isDrawingRect = false;
         if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
-            tempRect.set({ strokeDashArray: null, fill: currentColor.replace(/[\d.]+\)$/, '0.3)' });
+            tempRect.set({
+                strokeDashArray: null,
+                fill: currentColor.replace(/[\d.]+\)$/, '0.3)')
+            });
             var target = e.target.closest('.page-wrapper');
             if (target) {
                 var pageNum = parseInt(target.dataset.page);
@@ -330,7 +344,9 @@ var Annotations = (function() {
                             break;
                         }
                     }
-                    if (drawAnn) { drawAnn.comment = comment || ''; }
+                    if (drawAnn) {
+                        drawAnn.comment = comment || '';
+                    }
                     setAnnotations(anns);
                     saveLocal();
                     Sidebar.render(getAnnotations());
@@ -401,10 +417,15 @@ var Annotations = (function() {
             }
             if (ann.type === 'comment' && ann.x && ann.y && fabricCanvases[ann.page]) {
                 var rect = new fabric.Rect({
-                    left: ann.x - 22, top: ann.y - 22,
-                    width: 44, height: 44,
-                    fill: '#fef08a', stroke: '#ca8a04',
-                    strokeWidth: 2, rx: 4, ry: 4
+                    left: ann.x - 22,
+                    top: ann.y - 22,
+                    width: 44,
+                    height: 44,
+                    fill: '#fef08a',
+                    stroke: '#ca8a04',
+                    strokeWidth: 2,
+                    rx: 4,
+                    ry: 4
                 });
                 fabricCanvases[ann.page].add(rect);
                 fabricCanvases[ann.page].renderAll();
@@ -412,49 +433,66 @@ var Annotations = (function() {
         });
     }
 
-    // Event wiring
+    // Wire toolbar events
     document.querySelectorAll('[data-tool]').forEach(function(b) {
         b.onclick = function() { setTool(b.dataset.tool); };
     });
     document.querySelectorAll('.color-btn').forEach(function(b) {
         b.onclick = function() { setColor(b.dataset.color); };
     });
-    $('pdf-scroll-container').addEventListener('mousedown', handleRectangleMouseDown);
-    $('pdf-scroll-container').addEventListener('mousemove', handleRectangleMouseMove);
-    $('pdf-scroll-container').addEventListener('mouseup', handleRectangleMouseUp);
-    $('undo-btn').onclick = undo;
-    $('clear-page').onclick = clearPage;
-    $('sync-btn').onclick = async function() {
-        var result = await syncToGitHub();
-        UI.showToast('Synced: ' + result.synced + ' new, ' + result.updated + ' updated', 'success');
-    };
 
-    // Expose showCommentModal reference
+    // Wire rectangle events
+    var scrollEl = $('pdf-scroll-container');
+    if (scrollEl) {
+        scrollEl.addEventListener('mousedown', handleRectDown);
+        scrollEl.addEventListener('mousemove', handleRectMove);
+        scrollEl.addEventListener('mouseup', handleRectUp);
+    }
+
+    // Wire action buttons
+    var undoBtn = $('undo-btn');
+    if (undoBtn) { undoBtn.onclick = undo; }
+    var clearBtn = $('clear-page');
+    if (clearBtn) { clearBtn.onclick = clearPage; }
+    var syncBtn = $('sync-btn');
+    if (syncBtn) {
+        syncBtn.onclick = async function() {
+            var result = await syncToGitHub();
+            UI.showToast('Synced: ' + result.synced + ' new, ' + result.updated + ' updated', 'success');
+        };
+    }
+
+    // Comment modal helper
     window.showCommentModal = function(context, callback) {
         var modal = document.getElementById('comment-modal');
         var ctx = document.getElementById('modal-context');
         var txt = document.getElementById('modal-comment');
+        var saveBtn = document.getElementById('modal-save');
+        var cancelBtn = document.getElementById('modal-cancel');
+        if (!modal || !ctx || !txt || !saveBtn || !cancelBtn) {
+            if (callback) { callback(''); }
+            return;
+        }
         ctx.textContent = context;
         txt.value = '';
         modal.showModal();
         setTimeout(function() { txt.focus(); }, 100);
-        var saveBtn = document.getElementById('modal-save');
-        var cancelBtn = document.getElementById('modal-cancel');
-        var handler = function() {
+
+        function onSave() {
             var comment = txt.value.trim();
             modal.close();
-            saveBtn.removeEventListener('click', handler);
-            cancelBtn.removeEventListener('click', cancelHandler);
+            saveBtn.removeEventListener('click', onSave);
+            cancelBtn.removeEventListener('click', onCancel);
             if (callback) { callback(comment || ''); }
-        };
-        var cancelHandler = function() {
+        }
+        function onCancel() {
             modal.close();
-            saveBtn.removeEventListener('click', handler);
-            cancelBtn.removeEventListener('click', cancelHandler);
+            saveBtn.removeEventListener('click', onSave);
+            cancelBtn.removeEventListener('click', onCancel);
             if (callback) { callback(''); }
-        };
-        saveBtn.addEventListener('click', handler);
-        cancelBtn.addEventListener('click', cancelHandler);
+        }
+        saveBtn.addEventListener('click', onSave);
+        cancelBtn.addEventListener('click', onCancel);
     };
 
     return {
