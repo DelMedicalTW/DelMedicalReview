@@ -1,7 +1,12 @@
 // ============================================================
 // ANNOTATION SIDEBAR
 // ============================================================
-const Sidebar = (function() {
+var Sidebar = (function() {
+    // Don't redeclare if already loaded
+    if (typeof Sidebar !== 'undefined' && Sidebar.render) {
+        return Sidebar;
+    }
+
     const $ = function(id) { return document.getElementById(id); };
     const annotationList = $('annotation-list');
     const annotationCount = $('annotation-count');
@@ -13,7 +18,11 @@ const Sidebar = (function() {
     }
 
     function render(annotations) {
-        if (!annotations.length) {
+        if (!annotationList || !annotationCount) {
+            console.warn('Sidebar: DOM elements not found');
+            return;
+        }
+        if (!annotations || !annotations.length) {
             annotationList.innerHTML =
                 '<div class="text-center py-8 text-base-content/40 text-sm">' +
                 '<i data-lucide="message-circle" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>' +
@@ -21,7 +30,7 @@ const Sidebar = (function() {
                 '<p class="text-xs mt-1">Use the toolbar to add highlights, drawings, or notes.</p>' +
                 '</div>';
             annotationCount.textContent = '0';
-            lucide.createIcons();
+            if (typeof lucide !== 'undefined') lucide.createIcons();
             return;
         }
         annotations.sort(function(a, b) { return a.page - b.page; });
@@ -55,7 +64,7 @@ const Sidebar = (function() {
             const resolved = ann.issueState === 'closed'
                 ? '<span class="badge badge-success badge-xs ml-1"><i data-lucide="check" class="w-3 h-3 inline"></i> Resolved</span>' : '';
 
-            return '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary transition-colors" onclick="Annotations.scrollToPage(' + ann.page + ')">' +
+            return '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary transition-colors" onclick="if(typeof Annotations!==\'undefined\')Annotations.scrollToPage(' + ann.page + ')">' +
                 '<div class="card-body p-3">' +
                 '<div class="flex items-center gap-2 flex-wrap text-xs text-base-content/50">' +
                 '<span class="badge badge-xs ' + tl.cls + '"><i data-lucide="' + tl.icon + '" class="w-3 h-3 inline"></i> ' + tl.label + '</span>' +
@@ -69,18 +78,18 @@ const Sidebar = (function() {
                 '</div>';
         }).join('');
 
-        // Re-initialize Lucide icons
-        lucide.createIcons();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     function clear() {
+        if (!annotationList || !annotationCount) return;
         annotationList.innerHTML =
             '<div class="text-center py-8 text-base-content/40 text-sm">' +
             '<i data-lucide="message-circle" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>' +
             '<p>No annotations yet.</p>' +
             '</div>';
         annotationCount.textContent = '0';
-        lucide.createIcons();
+        if (typeof lucide !== 'undefined') lucide.createIcons();
     }
 
     return {
