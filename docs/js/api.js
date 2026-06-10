@@ -17,9 +17,22 @@ var API = (function() {
     }
 
     function getIssueLabel(pdfName) {
-        var safe = pdfName.replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 50);
-        return ISSUE_LABEL_PREFIX + ':' + safe;
+    // Remove all special characters, keep only alphanumeric, dashes, underscores
+    var safe = pdfName.replace(/[^a-zA-Z0-9_-]/g, '-');
+    // Remove consecutive dashes
+    safe = safe.replace(/-+/g, '-');
+    // Remove leading/trailing dashes
+    safe = safe.replace(/^-+|-+$/g, '');
+    // Truncate to 50 chars max
+    if (safe.length > 50) {
+        safe = safe.substring(0, 50);
     }
+    // Ensure it's not empty
+    if (!safe) {
+        safe = 'pdf-review';
+    }
+    return ISSUE_LABEL_PREFIX + ':' + safe;
+}
 
     return {
         fetchContents: function(path) {
@@ -48,29 +61,35 @@ var API = (function() {
         },
 
         createAnnotationIssue: async function(pdfName, annotationData) {
-            var label = getIssueLabel(pdfName);
-            var cp = (annotationData.comment || '');
-            if (cp.length > 60) { cp = cp.substring(0, 60); }
-            var title = '[' + pdfName + '] Page ' + annotationData.page + ': ' + annotationData.type;
-            if (cp) { title = title + ' - ' + cp; }
-            var body = '<!-- delmed-pdf-annotation -->\n';
-            body = body + '| Field | Value |\n| --- | --- |\n';
-            body = body + '| **PDF** | ' + pdfName + ' |\n';
-            body = body + '| **Page** | ' + annotationData.page + ' |\n';
-            body = body + '| **Type** | ' + annotationData.type + ' |\n';
-            body = body + '| **Reviewer** | ' + (annotationData.reviewer || 'Unknown') + ' |\n';
-            body = body + '| **Date** | ' + annotationData.timestamp + ' |\n';
-            body = body + '| **Color** | ' + (annotationData.color || 'default') + ' |\n\n';
-            body = body + '**Comment:** ' + (annotationData.comment || 'No comment') + '\n';
-            if (annotationData.quotedText) {
-                body = body + '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n';
-            }
-            body = body + '\n```json\n' + JSON.stringify(annotationData, null, 2) + '\n```\n';
-            return githubAPI('/issues', {
-                method: 'POST',
-                body: JSON.stringify({ title: title, body: body, labels: [label] })
-            });
-        },
+    var label = getIssueLabel(pdfName);
+    var cp = (annotationData.comment || '');
+    if (cp.length > 50) { cp = cp.substring(0, 50); }
+    // Keep title short to avoid GitHub API rejection
+    var shortName = pdfName;
+    if (shortName.length > 40) { shortName = shortName.substring(0, 37) + '...'; }
+    var title = 'Page ' + annotationData.page + ': ' + annotationData.type;
+    if (cp) { title = title + ' - ' + cp; }
+    title = title.substring(0, 255); // GitHub title limit
+    
+    var body = '<!-- delmed-pdf-annotation -->\n';
+    body = body + '| Field | Value |\n| --- | --- |\n';
+    body = body + '| **PDF** | ' + shortName + ' |\n';
+    body = body + '| **Page** | ' + annotationData.page + ' |\n';
+    body = body + '| **Type** | ' + annotationData.type + ' |\n';
+    body = body + '| **Reviewer** | ' + (annotationData.reviewer || 'Unknown') + ' |\n';
+    body = body + '| **Date** | ' + annotationData.timestamp + ' |\n';
+    body = body + '| **Color** | ' + (annotationData.color || 'default') + ' |\n\n';
+    body = body + '**Comment:** ' + (annotationData.comment || 'No comment') + '\n';
+    if (annotationData.quotedText) {
+        body = body + '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n';
+    }
+    body = body + '\n```json\n' + JSON.stringify(annotationData, null, 2) + '\n```\n';
+    
+    return githubAPI('/issues', {
+        method: 'POST',
+        body: JSON.stringify({ title: title, body: body, labels: [label] })
+    });
+},
 
         updateAnnotationIssue: async function(issueNumber, annotationData) {
             var body = '<!-- delmed-pdf-annotation -->\n';
