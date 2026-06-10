@@ -242,48 +242,49 @@
     <script>
     lucide.createIcons();
 
-    const PROXY = 'https://pdf-review-proxy.mmuqeem.workers.dev';
-    const $ = id => document.getElementById(id);
-    const STORAGE_KEY = 'delmed-annotations-v2';
-    const ISSUE_LABEL_PREFIX = 'pdf-review';
-    const OWNER = 'DelMedicalTW';
-    const REPO = 'DelMedicalRelease';
+    var PROXY = 'https://pdf-review-proxy.mmuqeem.workers.dev';
+    var $ = function(id) { return document.getElementById(id); };
+    var STORAGE_KEY = 'delmed-annotations-v2';
+    var ISSUE_LABEL_PREFIX = 'pdf-review';
+    var OWNER = 'DelMedicalTW';
+    var REPO = 'DelMedicalRelease';
 
     // ============================================================
     // STATE
     // ============================================================
-    let currentPath = '';
-    let currentPDFName = '';
-    let annotations = {};
-    let fabricCanvases = {};
-    let pageContainers = {};
-    let currentTool = 'select';
-    let currentColor = 'rgba(255,213,79,0.45)';
-    let isLoadingPDF = false;
-    let syncInProgress = false;
+    var currentPath = '';
+    var currentPDFName = '';
+    var annotations = {};
+    var fabricCanvases = {};
+    var pageContainers = {};
+    var currentTool = 'select';
+    var currentColor = 'rgba(255,213,79,0.45)';
+    var isLoadingPDF = false;
+    var syncInProgress = false;
 
     // ============================================================
     // THEME
     // ============================================================
-    const savedTheme = localStorage.getItem('delmed-theme') || 'dark';
+    var savedTheme = localStorage.getItem('delmed-theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
-    document.querySelectorAll('[data-theme-switch]').forEach(el => {
-        el.addEventListener('click', (e) => {
+    document.querySelectorAll('[data-theme-switch]').forEach(function(el) {
+        el.addEventListener('click', function(e) {
             e.preventDefault();
-            const theme = el.dataset.themeSwitch;
+            var theme = el.dataset.themeSwitch;
             document.documentElement.setAttribute('data-theme', theme);
             localStorage.setItem('delmed-theme', theme);
-            el.closest('.dropdown')?.querySelector('button')?.blur();
+            var dropdown = el.closest('.dropdown');
+            if (dropdown) { var btn = dropdown.querySelector('button'); if (btn) btn.blur(); }
         });
     });
 
     // ============================================================
     // REVIEWER
     // ============================================================
-    const reviewerInput = $('reviewer-name');
+    var reviewerInput = $('reviewer-name');
     if (reviewerInput) {
         reviewerInput.value = localStorage.getItem('delmed-reviewer') || '';
-        reviewerInput.addEventListener('change', () => {
+        reviewerInput.addEventListener('change', function() {
             localStorage.setItem('delmed-reviewer', reviewerInput.value.trim());
         });
     }
@@ -295,8 +296,8 @@
     // TOAST
     // ============================================================
     function toast(msg, type) {
-        const t = $('toast'), a = $('toast-alert'), m = $('toast-message');
-        const ok = $('toast-icon-ok'), err = $('toast-icon-err');
+        var t = $('toast'), a = $('toast-alert'), m = $('toast-message');
+        var ok = $('toast-icon-ok'), err = $('toast-icon-err');
         if (!t || !a || !m) return;
         m.textContent = msg;
         a.className = 'alert ' + (type === 'error' ? 'alert-error' : 'alert-success');
@@ -304,11 +305,11 @@
         err.classList.toggle('hidden', type !== 'error');
         t.classList.remove('hidden');
         clearTimeout(t._timer);
-        t._timer = setTimeout(() => t.classList.add('hidden'), 3500);
+        t._timer = setTimeout(function() { t.classList.add('hidden'); }, 3500);
     }
 
     function esc(s) {
-        const d = document.createElement('div');
+        var d = document.createElement('div');
         d.textContent = s || '';
         return d.innerHTML;
     }
@@ -318,15 +319,15 @@
     // ============================================================
     async function githubAPI(path, opts) {
         opts = opts || {};
-        const headers = { 'Accept': 'application/vnd.github.v3+json' };
+        var headers = { 'Accept': 'application/vnd.github.v3+json' };
         if (opts.body) headers['Content-Type'] = 'application/json';
-        const resp = await fetch(PROXY + path, {
-            headers,
+        var resp = await fetch(PROXY + path, {
+            headers: headers,
             method: opts.method || 'GET',
             body: opts.body || undefined,
         });
         if (!resp.ok) {
-            let err = {};
+            var err = {};
             try { err = await resp.json(); } catch (e) {}
             throw new Error(err.message || 'GitHub API ' + resp.status);
         }
@@ -334,92 +335,68 @@
     }
 
     function getIssueLabel(pdfName) {
-        // Create a safe label from the PDF name
-        const safe = pdfName.replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 50);
+        var safe = pdfName.replace(/[^a-zA-Z0-9_-]/g, '-').substring(0, 50);
         return ISSUE_LABEL_PREFIX + ':' + safe;
     }
 
     async function fetchIssuesForPDF(pdfName) {
-        const label = getIssueLabel(pdfName);
-        const allIssues = [];
-        let page = 1;
+        var label = getIssueLabel(pdfName);
+        var allIssues = [];
+        var page = 1;
         while (true) {
-            const batch = await githubAPI(`/issues?labels=${encodeURIComponent(label)}&state=all&per_page=100&page=${page}`);
+            var batch = await githubAPI('/issues?labels=' + encodeURIComponent(label) + '&state=all&per_page=100&page=' + page);
             if (!batch.length) break;
-            allIssues.push(...batch);
+            allIssues = allIssues.concat(batch);
             page++;
         }
-        // Filter for our annotation issues
-        return allIssues.filter(issue => issue.body && issue.body.includes('<!-- delmed-pdf-annotation -->'));
+        return allIssues.filter(function(issue) {
+            return issue.body && issue.body.indexOf('<!-- delmed-pdf-annotation -->') !== -1;
+        });
     }
 
     async function createAnnotationIssue(pdfName, annotationData) {
-        const label = getIssueLabel(pdfName);
-        const typeIcons = {
-            highlight: '🖍', drawing: '✏️', rectangle: '⬜', comment: '📝'
-        };
-        const icon = typeIcons[annotationData.type] || '📌';
-        const title = `[${pdfName}] Page ${annotationData.page}: ${icon} ${annotationData.type} — ${(annotationData.comment || '').substring(0, 60)}`;
-        
-        const body = `<!-- delmed-pdf-annotation -->
-| Field | Value |
-|---|---|
-| **PDF** | ${pdfName} |
-| **Page** | ${annotationData.page} |
-| **Type** | ${annotationData.type} |
-| **Reviewer** | ${annotationData.reviewer || 'Unknown'} |
-| **Date** | ${annotationData.timestamp} |
-| **Color** | ${annotationData.color || 'default'} |
+        var label = getIssueLabel(pdfName);
+        var typeIcons = { highlight: 'highlighter', drawing: 'pen', rectangle: 'square-dashed', comment: 'sticky-note' };
+        var icon = typeIcons[annotationData.type] || 'circle';
+        var commentPreview = (annotationData.comment || '');
+        if (commentPreview.length > 60) commentPreview = commentPreview.substring(0, 60);
+        var title = '[' + pdfName + '] Page ' + annotationData.page + ': ' + annotationData.type + ' - ' + commentPreview;
 
-**Comment:** ${annotationData.comment || 'No comment'}
-
-${annotationData.quotedText ? '**Quoted Text:**\n> ' + annotationData.quotedText + '\n' : ''}
-
-\`\`\`json
-${JSON.stringify(annotationData, null, 2)}
-\`\`\`
-`;
+        var body = '<!-- delmed-pdf-annotation -->\n' +
+            '| Field | Value |\n| --- | --- |\n' +
+            '| **PDF** | ' + pdfName + ' |\n' +
+            '| **Page** | ' + annotationData.page + ' |\n' +
+            '| **Type** | ' + annotationData.type + ' |\n' +
+            '| **Reviewer** | ' + (annotationData.reviewer || 'Unknown') + ' |\n' +
+            '| **Date** | ' + annotationData.timestamp + ' |\n' +
+            '| **Color** | ' + (annotationData.color || 'default') + ' |\n\n' +
+            '**Comment:** ' + (annotationData.comment || 'No comment') + '\n' +
+            (annotationData.quotedText ? '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n' : '') +
+            '\n```json\n' + JSON.stringify(annotationData, null, 2) + '\n```\n';
 
         return githubAPI('/issues', {
             method: 'POST',
-            body: JSON.stringify({
-                title,
-                body,
-                labels: [label],
-            }),
+            body: JSON.stringify({ title: title, body: body, labels: [label] }),
         });
     }
 
     async function updateAnnotationIssue(issueNumber, annotationData) {
-        const body = `<!-- delmed-pdf-annotation -->
-| Field | Value |
-|---|---|
-| **PDF** | ${currentPDFName} |
-| **Page** | ${annotationData.page} |
-| **Type** | ${annotationData.type} |
-| **Reviewer** | ${annotationData.reviewer || 'Unknown'} |
-| **Date** | ${annotationData.timestamp} |
-| **Color** | ${annotationData.color || 'default'} |
-
-**Comment:** ${annotationData.comment || 'No comment'}
-
-${annotationData.quotedText ? '**Quoted Text:**\n> ' + annotationData.quotedText + '\n' : ''}
-
-\`\`\`json
-${JSON.stringify(annotationData, null, 2)}
-\`\`\`
-`;
-        return githubAPI(`/issues/${issueNumber}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ body }),
-        });
+        var body = '<!-- delmed-pdf-annotation -->\n' +
+            '| Field | Value |\n| --- | --- |\n' +
+            '| **PDF** | ' + currentPDFName + ' |\n' +
+            '| **Page** | ' + annotationData.page + ' |\n' +
+            '| **Type** | ' + annotationData.type + ' |\n' +
+            '| **Reviewer** | ' + (annotationData.reviewer || 'Unknown') + ' |\n' +
+            '| **Date** | ' + annotationData.timestamp + ' |\n' +
+            '| **Color** | ' + (annotationData.color || 'default') + ' |\n\n' +
+            '**Comment:** ' + (annotationData.comment || 'No comment') + '\n' +
+            (annotationData.quotedText ? '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n' : '') +
+            '\n```json\n' + JSON.stringify(annotationData, null, 2) + '\n```\n';
+        return githubAPI('/issues/' + issueNumber, { method: 'PATCH', body: JSON.stringify({ body: body }) });
     }
 
     async function closeAnnotationIssue(issueNumber) {
-        return githubAPI(`/issues/${issueNumber}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ state: 'closed' }),
-        });
+        return githubAPI('/issues/' + issueNumber, { method: 'PATCH', body: JSON.stringify({ state: 'closed' }) });
     }
 
     // ============================================================
@@ -433,153 +410,91 @@ ${JSON.stringify(annotationData, null, 2)}
         annotations[currentPDFName] = anns;
     }
 
-    // Save to localStorage
     function saveLocal() {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(annotations));
-        } catch (e) {
-            toast('Local storage full', 'error');
-        }
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(annotations)); } catch (e) { toast('Local storage full', 'error'); }
     }
 
-    // Load from localStorage
     function loadLocal() {
-        try {
-            const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-            annotations = data;
-        } catch (e) {
-            annotations = {};
-        }
+        try { annotations = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch (e) { annotations = {}; }
     }
 
-    // Sync current PDF annotations to GitHub
     async function syncToGitHub() {
         if (syncInProgress || !currentPDFName) return;
         syncInProgress = true;
-        const syncBadge = $('sync-badge');
-        const syncLabel = $('sync-label');
-        
+        var syncBadge = $('sync-badge'), syncLabel = $('sync-label');
         try {
             syncBadge.className = 'badge badge-sm badge-warning gap-1';
             syncLabel.textContent = 'Syncing...';
-            
-            const anns = getAnnotations();
-            let synced = 0;
-            let updated = 0;
-
-            for (const ann of anns) {
+            var anns = getAnnotations();
+            var synced = 0, updated = 0;
+            for (var i = 0; i < anns.length; i++) {
                 try {
-                    if (ann.issueNumber) {
-                        // Update existing issue
-                        await updateAnnotationIssue(ann.issueNumber, ann);
-                        updated++;
-                    } else {
-                        // Create new issue
-                        const issue = await createAnnotationIssue(currentPDFName, ann);
-                        ann.issueNumber = issue.number;
-                        ann.issueUrl = issue.html_url;
-                        synced++;
-                    }
-                } catch (err) {
-                    console.warn('Failed to sync annotation:', err.message);
-                }
+                    var ann = anns[i];
+                    if (ann.issueNumber) { await updateAnnotationIssue(ann.issueNumber, ann); updated++; }
+                    else { var issue = await createAnnotationIssue(currentPDFName, ann); ann.issueNumber = issue.number; ann.issueUrl = issue.html_url; synced++; }
+                } catch (err) { console.warn('Failed to sync annotation:', err.message); }
             }
-
-            setAnnotations(anns);
-            saveLocal();
-            renderSidebar();
-
+            setAnnotations(anns); saveLocal(); renderSidebar();
             syncBadge.className = 'badge badge-sm badge-success gap-1';
             syncLabel.textContent = 'Synced';
-            toast(`Synced: ${synced} new, ${updated} updated`, 'success');
-            
+            toast('Synced: ' + synced + ' new, ' + updated + ' updated', 'success');
         } catch (err) {
-            syncBadge.className = 'badge badge-sm badge-error gap-1';
-            syncLabel.textContent = 'Error';
+            syncBadge.className = 'badge badge-sm badge-error gap-1'; syncLabel.textContent = 'Error';
             toast('Sync failed: ' + err.message, 'error');
         } finally {
             syncInProgress = false;
-            setTimeout(() => {
-                syncBadge.className = 'badge badge-sm badge-ghost gap-1';
-                syncLabel.textContent = 'GitHub';
-            }, 3000);
+            setTimeout(function() { syncBadge.className = 'badge badge-sm badge-ghost gap-1'; syncLabel.textContent = 'GitHub'; }, 3000);
         }
     }
 
-    // Load annotations from GitHub for the current PDF
     async function loadFromGitHub(pdfName) {
         try {
-            const issues = await fetchIssuesForPDF(pdfName);
-            const githubAnns = [];
-
-            for (const issue of issues) {
-                const jsonMatch = issue.body.match(/```json\n([\s\S]*?)\n```/);
+            var issues = await fetchIssuesForPDF(pdfName);
+            var githubAnns = [];
+            for (var i = 0; i < issues.length; i++) {
+                var jsonMatch = issues[i].body.match(/```json\n([\s\S]*?)\n```/);
                 if (!jsonMatch) continue;
                 try {
-                    const data = JSON.parse(jsonMatch[1]);
-                    data.issueNumber = issue.number;
-                    data.issueUrl = issue.html_url;
-                    data.issueState = issue.state;
+                    var data = JSON.parse(jsonMatch[1]);
+                    data.issueNumber = issues[i].number; data.issueUrl = issues[i].html_url; data.issueState = issues[i].state;
                     githubAnns.push(data);
                 } catch (e) {}
             }
-
-            // Merge with local annotations (prefer GitHub versions with issue numbers)
-            const localAnns = annotations[pdfName] || [];
-            const merged = [];
-            const seenIssueNumbers = new Set();
-
-            // Add GitHub annotations first
-            githubAnns.forEach(a => {
-                merged.push(a);
-                if (a.issueNumber) seenIssueNumbers.add(a.issueNumber);
-            });
-
-            // Add local annotations that don't have a matching GitHub issue
-            localAnns.forEach(a => {
-                if (!a.issueNumber || !seenIssueNumbers.has(a.issueNumber)) {
-                    if (!merged.some(m => m.timestamp === a.timestamp && m.page === a.page && m.type === a.type)) {
-                        merged.push(a);
-                    }
+            var localAnns = annotations[pdfName] || [];
+            var merged = [], seen = {};
+            githubAnns.forEach(function(a) { merged.push(a); if (a.issueNumber) seen[a.issueNumber] = true; });
+            localAnns.forEach(function(a) {
+                if (!a.issueNumber || !seen[a.issueNumber]) {
+                    var dup = false;
+                    for (var j = 0; j < merged.length; j++) { if (merged[j].timestamp === a.timestamp && merged[j].page === a.page && merged[j].type === a.type) { dup = true; break; } }
+                    if (!dup) merged.push(a);
                 }
             });
-
-            annotations[pdfName] = merged;
-            saveLocal();
-
-            if (githubAnns.length > 0) {
-                toast(`Loaded ${githubAnns.length} annotations from GitHub`, 'success');
-            }
-        } catch (err) {
-            console.warn('Could not load from GitHub:', err.message);
-            // Fall back to local
-        }
+            annotations[pdfName] = merged; saveLocal();
+            if (githubAnns.length > 0) toast('Loaded ' + githubAnns.length + ' annotations from GitHub', 'success');
+        } catch (err) { console.warn('Could not load from GitHub:', err.message); }
     }
 
     // ============================================================
     // COMMENT MODAL
     // ============================================================
-    const commentModal = $('comment-modal');
-    const modalContext = $('modal-context');
-    const modalComment = $('modal-comment');
-    let modalCallback = null;
+    var commentModal = $('comment-modal'), modalContext = $('modal-context'), modalComment = $('modal-comment'), modalCallback = null;
 
     function showCommentModal(context, callback) {
         modalContext.textContent = context;
         modalComment.value = '';
         modalCallback = callback;
         commentModal.showModal();
-        setTimeout(() => modalComment.focus(), 100);
+        setTimeout(function() { modalComment.focus(); }, 100);
     }
 
-    $('modal-save').addEventListener('click', () => {
-        const comment = modalComment.value.trim();
+    $('modal-save').addEventListener('click', function() {
+        var comment = modalComment.value.trim();
         if (modalCallback) modalCallback(comment || '');
-        commentModal.close();
-        modalCallback = null;
+        commentModal.close(); modalCallback = null;
     });
 
-    $('modal-cancel').addEventListener('click', () => {
+    $('modal-cancel').addEventListener('click', function() {
         commentModal.close();
         if (modalCallback) modalCallback('');
         modalCallback = null;
@@ -589,107 +504,73 @@ ${JSON.stringify(annotationData, null, 2)}
     // FOLDER TYPE DETECTION
     // ============================================================
     function getFolderInfo(path) {
-        const lower = (path || '').toLowerCase();
-        if (lower.includes('staging')) return { label: 'STAGING', cls: 'badge-warning', icon: 'package-open', desc: 'Pre-release preparation' };
-        if (lower.includes('draft')) return { label: 'DRAFTS', cls: 'badge-error', icon: 'pencil', desc: 'Work in progress' };
-        if (lower.includes('archive')) return { label: 'ARCHIVE', cls: 'badge-ghost', icon: 'archive', desc: 'Historical documents' };
-        if (lower.includes('service')) return { label: 'SERVICE', cls: 'badge-info', icon: 'wrench', desc: 'Service documentation' };
-        if (lower.includes('user')) return { label: 'USER', cls: 'badge-success', icon: 'users', desc: 'User documentation' };
+        var lower = (path || '').toLowerCase();
+        if (lower.indexOf('staging') !== -1) return { label: 'STAGING', cls: 'badge-warning', icon: 'package-open', desc: 'Pre-release preparation' };
+        if (lower.indexOf('draft') !== -1) return { label: 'DRAFTS', cls: 'badge-error', icon: 'pencil', desc: 'Work in progress' };
+        if (lower.indexOf('archive') !== -1) return { label: 'ARCHIVE', cls: 'badge-ghost', icon: 'archive', desc: 'Historical documents' };
+        if (lower.indexOf('service') !== -1) return { label: 'SERVICE', cls: 'badge-info', icon: 'wrench', desc: 'Service documentation' };
+        if (lower.indexOf('user') !== -1) return { label: 'USER', cls: 'badge-success', icon: 'users', desc: 'User documentation' };
         return null;
     }
 
-    function isDraft(filename) {
-        return /Rev_\d+[A-Za-z]/i.test(filename);
-    }
+    function isDraft(filename) { return /Rev_\d+[A-Za-z]/i.test(filename); }
 
     // ============================================================
     // FILE BROWSER
     // ============================================================
     async function loadDir(path) {
-        const fl = $('file-list');
+        var fl = $('file-list');
         if (!fl) return;
         fl.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm"><span class="loading loading-spinner loading-sm"></span> Loading...</div>';
         currentPath = path;
         try {
-            const contents = await githubAPI('/contents/' + path);
-            if (!Array.isArray(contents)) {
-                fl.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Not a directory.</div>';
-                return;
-            }
-            const folders = contents.filter(c => c.type === 'dir').sort((a,b) => a.name.localeCompare(b.name));
-            const pdfs = contents.filter(c => c.type === 'file' && c.name.toLowerCase().endsWith('.pdf')).sort((a,b) => a.name.localeCompare(b.name));
-            
-            let h = '';
-            const folderInfo = getFolderInfo(path);
+            var contents = await githubAPI('/contents/' + path);
+            if (!Array.isArray(contents)) { fl.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm">Not a directory.</div>'; return; }
+            var folders = contents.filter(function(c) { return c.type === 'dir'; }).sort(function(a,b) { return a.name.localeCompare(b.name); });
+            var pdfs = contents.filter(function(c) { return c.type === 'file' && c.name.toLowerCase().endsWith('.pdf'); }).sort(function(a,b) { return a.name.localeCompare(b.name); });
+            var h = '';
+            var folderInfo = getFolderInfo(path);
             if (folderInfo) {
-                h += `<div class="px-3 py-2 bg-base-300/50 border-b border-base-300">
-                    <div class="flex items-center gap-2">
-                        <span class="badge ${folderInfo.cls} badge-sm gap-1"><i data-lucide="${folderInfo.icon}" class="w-3 h-3"></i> ${folderInfo.label}</span>
-                        <span class="text-xs text-base-content/60">${folderInfo.desc}</span>
-                    </div>
-                </div>`;
+                h += '<div class="px-3 py-2 bg-base-300/50 border-b border-base-300"><div class="flex items-center gap-2">' +
+                    '<span class="badge ' + folderInfo.cls + ' badge-sm gap-1"><i data-lucide="' + folderInfo.icon + '" class="w-3 h-3"></i> ' + folderInfo.label + '</span>' +
+                    '<span class="text-xs text-base-content/60">' + folderInfo.desc + '</span></div></div>';
             }
-
-            folders.forEach(f => {
-                const fi = getFolderInfo(f.path);
-                const badge = fi ? `<span class="badge ${fi.cls} badge-xs ml-auto flex-shrink-0">${fi.label}</span>` : '';
-                h += `<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none" data-path="${esc(f.path)}">
-                    <i data-lucide="folder" class="w-4 h-4 flex-shrink-0 text-warning"></i>
-                    <span class="truncate">${esc(f.name)}</span>${badge}
-                </div>`;
+            folders.forEach(function(f) {
+                var fi = getFolderInfo(f.path);
+                var badge = fi ? '<span class="badge ' + fi.cls + ' badge-xs ml-auto flex-shrink-0">' + fi.label + '</span>' : '';
+                h += '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none" data-path="' + esc(f.path) + '">' +
+                    '<i data-lucide="folder" class="w-4 h-4 flex-shrink-0 text-warning"></i><span class="truncate">' + esc(f.name) + '</span>' + badge + '</div>';
             });
-
-            pdfs.forEach(p => {
-                const draft = isDraft(p.name);
-                const fi = getFolderInfo(currentPath);
-                let badgeHtml = '';
-                if (draft) {
-                    badgeHtml = `<span class="badge badge-error badge-xs ml-auto flex-shrink-0">DRAFT</span>`;
-                } else if (fi) {
-                    badgeHtml = `<span class="badge ${fi.cls} badge-xs ml-auto flex-shrink-0">${fi.label}</span>`;
-                }
-                const active = currentPDFName === p.name ? ' active-file' : '';
-                h += `<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none${active}" data-path="${esc(p.path)}" data-name="${esc(p.name)}">
-                    <i data-lucide="file-text" class="w-4 h-4 flex-shrink-0 text-error"></i>
-                    <span class="truncate">${esc(p.name)}</span>${badgeHtml}
-                </div>`;
+            pdfs.forEach(function(p) {
+                var draft = isDraft(p.name), fi = getFolderInfo(currentPath);
+                var badgeHtml = '';
+                if (draft) badgeHtml = '<span class="badge badge-error badge-xs ml-auto flex-shrink-0">DRAFT</span>';
+                else if (fi) badgeHtml = '<span class="badge ' + fi.cls + ' badge-xs ml-auto flex-shrink-0">' + fi.label + '</span>';
+                var active = currentPDFName === p.name ? ' active-file' : '';
+                h += '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none' + active + '" data-path="' + esc(p.path) + '" data-name="' + esc(p.name) + '">' +
+                    '<i data-lucide="file-text" class="w-4 h-4 flex-shrink-0 text-error"></i><span class="truncate">' + esc(p.name) + '</span>' + badgeHtml + '</div>';
             });
-
-            fl.innerHTML = h;
-            lucide.createIcons();
-
-            fl.querySelectorAll('.file-row[data-path]:not([data-name])').forEach(el => {
-                el.onclick = () => loadDir(el.dataset.path);
-            });
-            fl.querySelectorAll('.file-row[data-name]').forEach(el => {
-                el.onclick = () => loadPDF(el.dataset.path, el.dataset.name);
-            });
-
-            const backBtn = $('back-btn');
-            if (backBtn) backBtn.disabled = !path;
+            fl.innerHTML = h; lucide.createIcons();
+            fl.querySelectorAll('.file-row[data-path]:not([data-name])').forEach(function(el) { el.onclick = function() { loadDir(el.dataset.path); }; });
+            fl.querySelectorAll('.file-row[data-name]').forEach(function(el) { el.onclick = function() { loadPDF(el.dataset.path, el.dataset.name); }; });
+            var backBtn = $('back-btn'); if (backBtn) backBtn.disabled = !path;
         } catch (err) {
-            fl.innerHTML = `<div class="text-center py-8 text-error text-sm">
-                <i data-lucide="alert-triangle" class="w-6 h-6 mx-auto mb-1"></i>
-                ${esc(err.message)}
-            </div>`;
+            fl.innerHTML = '<div class="text-center py-8 text-error text-sm"><i data-lucide="alert-triangle" class="w-6 h-6 mx-auto mb-1"></i>' + esc(err.message) + '</div>';
             lucide.createIcons();
         }
     }
 
-    $('back-btn').onclick = () => {
-        if (currentPath) loadDir(currentPath.split('/').slice(0,-1).join('/') || '');
-    };
-
-    $('search-input').oninput = e => {
-        const q = e.target.value.toLowerCase();
-        $('file-list').querySelectorAll('.file-row').forEach(el => {
-            el.style.display = (el.querySelector('.truncate')?.textContent || '').toLowerCase().includes(q) ? '' : 'none';
+    $('back-btn').onclick = function() { if (currentPath) loadDir(currentPath.split('/').slice(0,-1).join('/') || ''); };
+    $('search-input').oninput = function(e) {
+        var q = e.target.value.toLowerCase();
+        $('file-list').querySelectorAll('.file-row').forEach(function(el) {
+            el.style.display = (el.querySelector('.truncate') && el.querySelector('.truncate').textContent || '').toLowerCase().indexOf(q) !== -1 ? '' : 'none';
         });
     };
 
     function highlightFile(name) {
-        $('file-list').querySelectorAll('.active-file').forEach(el => el.classList.remove('active-file'));
-        const el = $('file-list').querySelector(`[data-name="${name}"]`);
+        $('file-list').querySelectorAll('.active-file').forEach(function(el) { el.classList.remove('active-file'); });
+        var el = $('file-list').querySelector('[data-name="' + name + '"]');
         if (el) el.classList.add('active-file');
     }
 
@@ -698,143 +579,85 @@ ${JSON.stringify(annotationData, null, 2)}
     // ============================================================
     function setTool(tool) {
         currentTool = tool;
-        document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('tool-active'));
-        const btn = document.querySelector(`[data-tool="${tool}"]`);
+        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('tool-active'); });
+        var btn = document.querySelector('[data-tool="' + tool + '"]');
         if (btn) btn.classList.add('tool-active');
-        
-        Object.values(fabricCanvases).forEach(fc => {
+        Object.values(fabricCanvases).forEach(function(fc) {
             if (!fc || !fc.lowerCanvasEl) return;
-            const el = fc.lowerCanvasEl;
-            if (tool === 'select') {
-                el.style.pointerEvents = 'none';
-                fc.isDrawingMode = false; fc.selection = false;
-            } else if (tool === 'draw') {
-                el.style.pointerEvents = 'auto';
-                fc.isDrawingMode = true; fc.selection = false;
-                fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)');
-                fc.freeDrawingBrush.width = 3;
-            } else if (tool === 'highlight') {
-                el.style.pointerEvents = 'none';
-                fc.isDrawingMode = false; fc.selection = false;
-            } else {
-                el.style.pointerEvents = 'auto';
-                fc.isDrawingMode = false; fc.selection = false;
-            }
+            var el = fc.lowerCanvasEl;
+            if (tool === 'select') { el.style.pointerEvents = 'none'; fc.isDrawingMode = false; fc.selection = false; }
+            else if (tool === 'draw') { el.style.pointerEvents = 'auto'; fc.isDrawingMode = true; fc.selection = false; fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)'); fc.freeDrawingBrush.width = 3; }
+            else if (tool === 'highlight') { el.style.pointerEvents = 'none'; fc.isDrawingMode = false; fc.selection = false; }
+            else { el.style.pointerEvents = 'auto'; fc.isDrawingMode = false; fc.selection = false; }
             fc.renderAll();
         });
     }
 
     function setColor(color) {
         currentColor = color;
-        document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
-        const btn = document.querySelector(`[data-color="${color}"]`);
+        document.querySelectorAll('.color-btn').forEach(function(b) { b.classList.remove('selected'); });
+        var btn = document.querySelector('[data-color="' + color + '"]');
         if (btn) btn.classList.add('selected');
         if (currentTool === 'draw') {
-            Object.values(fabricCanvases).forEach(fc => {
-                if (fc) fc.freeDrawingBrush.color = color.replace(/[\d.]+\)$/, '1)');
-            });
+            Object.values(fabricCanvases).forEach(function(fc) { if (fc) fc.freeDrawingBrush.color = color.replace(/[\d.]+\)$/, '1)'); });
         }
     }
 
-    document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
-    document.querySelectorAll('.color-btn').forEach(b => b.onclick = () => setColor(b.dataset.color));
+    document.querySelectorAll('[data-tool]').forEach(function(b) { b.onclick = function() { setTool(b.dataset.tool); }; });
+    document.querySelectorAll('.color-btn').forEach(function(b) { b.onclick = function() { setColor(b.dataset.color); }; });
 
     // ============================================================
     // SIDEBAR
     // ============================================================
     function renderSidebar() {
-        const list = $('annotation-list');
-        const count = $('annotation-count');
+        var list = $('annotation-list'), count = $('annotation-count');
         if (!list || !count) return;
-
-        const anns = getAnnotations();
+        var anns = getAnnotations();
         if (!anns.length) {
-            list.innerHTML = `<div class="text-center py-8 text-base-content/40 text-sm">
-                <i data-lucide="inbox" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>
-                <p>No annotations yet</p>
-            </div>`;
-            count.textContent = '0';
-            lucide.createIcons();
-            return;
+            list.innerHTML = '<div class="text-center py-8 text-base-content/40 text-sm"><i data-lucide="inbox" class="w-10 h-10 mx-auto mb-2 opacity-40"></i><p>No annotations yet</p></div>';
+            count.textContent = '0'; lucide.createIcons(); return;
         }
-
-        anns.sort((a,b) => a.page - b.page);
+        anns.sort(function(a,b) { return a.page - b.page; });
         count.textContent = anns.length;
-
-        const typeConfig = {
+        var typeConfig = {
             highlight: { label: 'Highlight', cls: 'badge-warning', icon: 'highlighter' },
             drawing: { label: 'Drawing', cls: 'badge-info', icon: 'pen' },
             rectangle: { label: 'Rectangle', cls: 'badge-accent', icon: 'square-dashed' },
             comment: { label: 'Note', cls: 'badge-success', icon: 'sticky-note' },
         };
-
-        list.innerHTML = anns.map((a, i) => {
-            const tc = typeConfig[a.type] || { label: a.type, cls: 'badge-ghost', icon: 'circle' };
-            let body = '';
-            if (a.comment) body += `<p class="text-sm mt-1">${esc(a.comment)}</p>`;
+        list.innerHTML = anns.map(function(a, i) {
+            var tc = typeConfig[a.type] || { label: a.type, cls: 'badge-ghost', icon: 'circle' };
+            var body = '';
+            if (a.comment) body += '<p class="text-sm mt-1">' + esc(a.comment) + '</p>';
             if (a.type === 'drawing' && !a.comment) body += '<p class="text-xs text-base-content/40 mt-1">Freehand drawing</p>';
             if (a.type === 'rectangle' && !a.comment) body += '<p class="text-xs text-base-content/40 mt-1">Area selection</p>';
-            
-            const gitHubLink = a.issueNumber
-                ? `<a href="${a.issueUrl}" target="_blank" class="text-xs text-info hover:underline flex items-center gap-1 ml-auto" onclick="event.stopPropagation()" title="View on GitHub"><i data-lucide="external-link" class="w-3 h-3"></i> #${a.issueNumber}</a>`
-                : `<span class="text-xs text-warning flex items-center gap-1 ml-auto" title="Not synced to GitHub"><i data-lucide="cloud-off" class="w-3 h-3"></i></span>`;
-
-            return `<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary hover:shadow-md transition-all" onclick="scrollToPage(${a.page})">
-                <div class="card-body p-3">
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <span class="badge badge-xs ${tc.cls} gap-1"><i data-lucide="${tc.icon}" class="w-3 h-3"></i> ${tc.label}</span>
-                        <span class="text-xs text-base-content/50">Page ${a.page}</span>
-                        ${a.reviewer ? `<span class="text-xs text-base-content/40"><i data-lucide="user" class="w-3 h-3 inline"></i> ${esc(a.reviewer)}</span>` : ''}
-                        ${gitHubLink}
-                        <button class="btn btn-ghost btn-xs text-error p-0 min-h-0 h-6 w-6" onclick="event.stopPropagation();deleteAnnotation(${i})" title="Delete">✕</button>
-                    </div>
-                    ${body}
-                    <div class="text-xs text-base-content/40">${new Date(a.timestamp).toLocaleString()}</div>
-                </div>
-            </div>`;
+            var gitHubLink = a.issueNumber
+                ? '<a href="' + a.issueUrl + '" target="_blank" class="text-xs text-info hover:underline flex items-center gap-1 ml-auto" onclick="event.stopPropagation()" title="View on GitHub"><i data-lucide="external-link" class="w-3 h-3"></i> #' + a.issueNumber + '</a>'
+                : '<span class="text-xs text-warning flex items-center gap-1 ml-auto" title="Not synced to GitHub"><i data-lucide="cloud-off" class="w-3 h-3"></i></span>';
+            return '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary hover:shadow-md transition-all" onclick="scrollToPage(' + a.page + ')">' +
+                '<div class="card-body p-3"><div class="flex items-center gap-2 flex-wrap">' +
+                '<span class="badge badge-xs ' + tc.cls + ' gap-1"><i data-lucide="' + tc.icon + '" class="w-3 h-3"></i> ' + tc.label + '</span>' +
+                '<span class="text-xs text-base-content/50">Page ' + a.page + '</span>' +
+                (a.reviewer ? '<span class="text-xs text-base-content/40"><i data-lucide="user" class="w-3 h-3 inline"></i> ' + esc(a.reviewer) + '</span>' : '') +
+                gitHubLink +
+                '<button class="btn btn-ghost btn-xs text-error p-0 min-h-0 h-6 w-6" onclick="event.stopPropagation();deleteAnnotation(' + i + ')" title="Delete"><i data-lucide="x" class="w-3 h-3"></i></button>' +
+                '</div>' + body + '<div class="text-xs text-base-content/40">' + new Date(a.timestamp).toLocaleString() + '</div></div></div>';
         }).join('');
-
         lucide.createIcons();
     }
 
     window.scrollToPage = function(pageNum) {
-        const c = pageContainers[pageNum];
-        if (c) {
-            c.scrollIntoView({ behavior:'smooth', block:'center' });
-            c.style.boxShadow = '0 0 0 4px oklch(var(--p))';
-            setTimeout(() => { c.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)'; }, 1500);
-        }
+        var c = pageContainers[pageNum];
+        if (c) { c.scrollIntoView({ behavior:'smooth', block:'center' }); c.style.boxShadow = '0 0 0 4px oklch(var(--p))'; setTimeout(function() { c.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)'; }, 1500); }
     };
 
     window.deleteAnnotation = async function(index) {
-        const anns = getAnnotations();
-        const ann = anns[index];
+        var anns = getAnnotations(), ann = anns[index];
         if (!ann) return;
-
-        // Close GitHub issue if it exists
-        if (ann.issueNumber) {
-            try {
-                await closeAnnotationIssue(ann.issueNumber);
-                toast('Closed GitHub issue #' + ann.issueNumber, 'success');
-            } catch (err) {
-                toast('Could not close issue: ' + err.message, 'error');
-            }
-        }
-
-        // Remove from Fabric canvas
-        if (ann.page && (ann.type === 'drawing' || ann.type === 'rectangle') && fabricCanvases[ann.page]) {
-            fabricCanvases[ann.page].clear();
-            fabricCanvases[ann.page].renderAll();
-        }
-        if (ann.page && ann.type === 'comment' && fabricCanvases[ann.page]) {
-            fabricCanvases[ann.page].clear();
-            fabricCanvases[ann.page].renderAll();
-        }
-
-        anns.splice(index, 1);
-        setAnnotations(anns);
-        saveLocal();
-        renderSidebar();
+        if (ann.issueNumber) { try { await closeAnnotationIssue(ann.issueNumber); toast('Closed GitHub issue #' + ann.issueNumber, 'success'); } catch (err) { toast('Could not close issue: ' + err.message, 'error'); } }
+        if (ann.page && (ann.type === 'drawing' || ann.type === 'rectangle') && fabricCanvases[ann.page]) { fabricCanvases[ann.page].clear(); fabricCanvases[ann.page].renderAll(); }
+        if (ann.page && ann.type === 'comment' && fabricCanvases[ann.page]) { fabricCanvases[ann.page].clear(); fabricCanvases[ann.page].renderAll(); }
+        anns.splice(index, 1); setAnnotations(anns); saveLocal(); renderSidebar();
         toast('Annotation deleted', 'success');
     };
 
@@ -842,53 +665,29 @@ ${JSON.stringify(annotationData, null, 2)}
     // ANNOTATION HELPERS
     // ============================================================
     function addAnnotation(ann) {
-        const anns = getAnnotations();
-        ann.reviewer = getReviewer();
-        ann.timestamp = new Date().toISOString();
-        anns.push(ann);
-        setAnnotations(anns);
-        saveLocal();
-        renderSidebar();
-
-        // Auto-sync to GitHub in background
-        syncAnnotationToGitHub(ann).catch(() => {});
+        var anns = getAnnotations();
+        ann.reviewer = getReviewer(); ann.timestamp = new Date().toISOString();
+        anns.push(ann); setAnnotations(anns); saveLocal(); renderSidebar();
+        syncAnnotationToGitHub(ann).catch(function() {});
     }
 
     async function syncAnnotationToGitHub(ann) {
         try {
-            const issue = await createAnnotationIssue(currentPDFName, ann);
-            ann.issueNumber = issue.number;
-            ann.issueUrl = issue.html_url;
-            const anns = getAnnotations();
-            setAnnotations(anns);
-            saveLocal();
-            renderSidebar();
-            $('sync-badge').className = 'badge badge-sm badge-success gap-1';
-            $('sync-label').textContent = 'Synced';
-            setTimeout(() => {
-                $('sync-badge').className = 'badge badge-sm badge-ghost gap-1';
-                $('sync-label').textContent = 'GitHub';
-            }, 2000);
-        } catch (err) {
-            console.warn('Auto-sync failed:', err.message);
-        }
+            var issue = await createAnnotationIssue(currentPDFName, ann);
+            ann.issueNumber = issue.number; ann.issueUrl = issue.html_url;
+            var anns = getAnnotations(); setAnnotations(anns); saveLocal(); renderSidebar();
+            $('sync-badge').className = 'badge badge-sm badge-success gap-1'; $('sync-label').textContent = 'Synced';
+            setTimeout(function() { $('sync-badge').className = 'badge badge-sm badge-ghost gap-1'; $('sync-label').textContent = 'GitHub'; }, 2000);
+        } catch (err) { console.warn('Auto-sync failed:', err.message); }
     }
 
     function saveDrawings(pageNum) {
-        const fc = fabricCanvases[pageNum];
+        var fc = fabricCanvases[pageNum];
         if (!fc) return;
-        const objects = fc.getObjects().map(o => o.toJSON());
-        const anns = getAnnotations().filter(a => !((a.type === 'drawing' || a.type === 'rectangle') && a.page === pageNum));
-        if (objects.length > 0) {
-            anns.push({
-                type: 'drawing', page: pageNum, objects,
-                color: currentColor, reviewer: getReviewer(),
-                timestamp: new Date().toISOString(),
-            });
-        }
-        setAnnotations(anns);
-        saveLocal();
-        renderSidebar();
+        var objects = fc.getObjects().map(function(o) { return o.toJSON(); });
+        var anns = getAnnotations().filter(function(a) { return !((a.type === 'drawing' || a.type === 'rectangle') && a.page === pageNum); });
+        if (objects.length > 0) { anns.push({ type:'drawing', page:pageNum, objects:objects, color:currentColor, reviewer:getReviewer(), timestamp:new Date().toISOString() }); }
+        setAnnotations(anns); saveLocal(); renderSidebar();
     }
 
     // ============================================================
@@ -896,36 +695,20 @@ ${JSON.stringify(annotationData, null, 2)}
     // ============================================================
     function handleHighlight(pageNum) {
         if (currentTool !== 'highlight') return;
-        const sel = window.getSelection();
-        const text = sel.toString().trim();
+        var sel = window.getSelection(), text = sel.toString().trim();
         if (!text) return;
-        const container = pageContainers[pageNum];
+        var container = pageContainers[pageNum];
         if (!container || !container.contains(sel.anchorNode)) return;
-
-        const range = sel.getRangeAt(0);
-        const rects = range.getClientRects();
-        const cr = container.getBoundingClientRect();
-        const fc = fabricCanvases[pageNum];
+        var range = sel.getRangeAt(0), rects = range.getClientRects(), cr = container.getBoundingClientRect(), fc = fabricCanvases[pageNum];
         if (!fc) return;
-
-        for (let i = 0; i < rects.length; i++) {
-            const r = rects[i];
-            fc.add(new fabric.Rect({
-                left: r.left - cr.left, top: r.top - cr.top,
-                width: r.width, height: r.height,
-                fill: currentColor, selectable: false, evented: false, opacity: 0.5,
-            }));
+        for (var i = 0; i < rects.length; i++) {
+            var r = rects[i];
+            fc.add(new fabric.Rect({ left: r.left-cr.left, top: r.top-cr.top, width: r.width, height: r.height, fill: currentColor, selectable: false, evented: false, opacity: 0.5 }));
         }
         fc.renderAll();
-
-        const preview = text.length > 80 ? text.substring(0, 80) + '...' : text;
-        showCommentModal(`Highlight on page ${pageNum}: "${preview}"`, (comment) => {
-            const ann = {
-                type: 'highlight', page: pageNum,
-                comment: comment || text.substring(0, 100),
-                quotedText: text, color: currentColor,
-            };
-            addAnnotation(ann);
+        var preview = text.length > 80 ? text.substring(0,80)+'...' : text;
+        showCommentModal('Highlight on page ' + pageNum + ': "' + preview + '"', function(comment) {
+            addAnnotation({ type:'highlight', page:pageNum, comment: comment || text.substring(0,100), quotedText: text, color:currentColor });
             toast('Highlight saved' + (comment ? ' with comment' : ''), 'success');
         });
     }
@@ -935,29 +718,18 @@ ${JSON.stringify(annotationData, null, 2)}
     // ============================================================
     function handleSticky(e, pageNum) {
         if (currentTool !== 'comment') return;
-        const container = pageContainers[pageNum];
+        var container = pageContainers[pageNum];
         if (!container) return;
-        const cr = container.getBoundingClientRect();
-        const x = e.clientX - cr.left;
-        const y = e.clientY - cr.top;
-
-        showCommentModal(`Note on page ${pageNum}`, (comment) => {
+        var cr = container.getBoundingClientRect(), x = e.clientX - cr.left, y = e.clientY - cr.top;
+        showCommentModal('Note on page ' + pageNum, function(comment) {
             if (!comment) return;
-            const fc = fabricCanvases[pageNum];
+            var fc = fabricCanvases[pageNum];
             if (!fc) return;
-
-            const rect = new fabric.Rect({
-                left: x - 22, top: y - 22, width: 44, height: 44,
-                fill: '#fef08a', stroke: '#ca8a04', strokeWidth: 2, rx: 4, ry: 4,
-            });
-            const txt = new fabric.Text('📝', { left: x - 12, top: y - 14, fontSize: 18 });
-            fc.add(new fabric.Group([rect, txt], { left: x - 22, top: y - 22 }));
+            var rect = new fabric.Rect({ left:x-22, top:y-22, width:44, height:44, fill:'#fef08a', stroke:'#ca8a04', strokeWidth:2, rx:4, ry:4 });
+            var txt = new fabric.Text('', { left:x-12, top:y-14, fontSize:18 });
+            fc.add(new fabric.Group([rect, txt], { left:x-22, top:y-22 }));
             fc.renderAll();
-
-            addAnnotation({
-                type: 'comment', page: pageNum, comment,
-                x: Math.round(x), y: Math.round(y),
-            });
+            addAnnotation({ type:'comment', page:pageNum, comment:comment, x:Math.round(x), y:Math.round(y) });
             toast('Note saved!', 'success');
         });
     }
@@ -965,56 +737,42 @@ ${JSON.stringify(annotationData, null, 2)}
     // ============================================================
     // RECTANGLE
     // ============================================================
-    let isDrawingRect = false, rectStart = null, tempRect = null;
-
+    var isDrawingRect = false, rectStart = null, tempRect = null;
     $('pdf-scroll-container').addEventListener('mousedown', function(e) {
         if (currentTool !== 'rectangle') return;
-        const target = e.target.closest('.page-wrapper');
+        var target = e.target.closest('.page-wrapper');
         if (!target) return;
-        const pageNum = parseInt(target.dataset.page);
-        const fc = fabricCanvases[pageNum];
+        var pageNum = parseInt(target.dataset.page), fc = fabricCanvases[pageNum];
         if (!fc) return;
-        const ptr = fc.getPointer(e);
+        var ptr = fc.getPointer(e);
         isDrawingRect = true; rectStart = { x:ptr.x, y:ptr.y };
-        tempRect = new fabric.Rect({
-            left: ptr.x, top: ptr.y, width: 0, height: 0,
-            fill: 'transparent', stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
-            strokeWidth: 2, strokeDashArray: [5,5],
-        });
+        tempRect = new fabric.Rect({ left:ptr.x, top:ptr.y, width:0, height:0, fill:'transparent', stroke:currentColor.replace(/[\d.]+\)$/,'1)'), strokeWidth:2, strokeDashArray:[5,5] });
         fc.add(tempRect);
     });
-
     $('pdf-scroll-container').addEventListener('mousemove', function(e) {
         if (!isDrawingRect || !tempRect) return;
-        const target = e.target.closest('.page-wrapper');
+        var target = e.target.closest('.page-wrapper');
         if (!target) return;
-        const fc = fabricCanvases[parseInt(target.dataset.page)];
+        var fc = fabricCanvases[parseInt(target.dataset.page)];
         if (!fc) return;
-        const ptr = fc.getPointer(e);
-        tempRect.set({
-            left: Math.min(ptr.x, rectStart.x),
-            top: Math.min(ptr.y, rectStart.y),
-            width: Math.abs(ptr.x - rectStart.x),
-            height: Math.abs(ptr.y - rectStart.y),
-        });
+        var ptr = fc.getPointer(e);
+        tempRect.set({ left:Math.min(ptr.x,rectStart.x), top:Math.min(ptr.y,rectStart.y), width:Math.abs(ptr.x-rectStart.x), height:Math.abs(ptr.y-rectStart.y) });
         fc.renderAll();
     });
-
     $('pdf-scroll-container').addEventListener('mouseup', function(e) {
         if (!isDrawingRect || currentTool !== 'rectangle') { isDrawingRect = false; return; }
         isDrawingRect = false;
         if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
-            tempRect.set({ strokeDashArray: null, fill: currentColor.replace(/[\d.]+\)$/, '0.3)' });
-            const target = e.target.closest('.page-wrapper');
+            tempRect.set({ strokeDashArray:null, fill:currentColor.replace(/[\d.]+\)$/,'0.3)' });
+            var target = e.target.closest('.page-wrapper');
             if (target) {
-                const pageNum = parseInt(target.dataset.page);
-                showCommentModal(`Rectangle on page ${pageNum}`, (comment) => {
+                var pageNum = parseInt(target.dataset.page);
+                showCommentModal('Rectangle on page ' + pageNum, function(comment) {
                     saveDrawings(pageNum);
-                    const anns = getAnnotations();
-                    const drawAnn = anns.find(a => a.type === 'drawing' && a.page === pageNum);
-                    if (drawAnn) { drawAnn.comment = comment || ''; }
-                    setAnnotations(anns); saveLocal();
-                    renderSidebar();
+                    var anns = getAnnotations(), drawAnn = null;
+                    for (var j = 0; j < anns.length; j++) { if (anns[j].type === 'drawing' && anns[j].page === pageNum) { drawAnn = anns[j]; break; } }
+                    if (drawAnn) drawAnn.comment = comment || '';
+                    setAnnotations(anns); saveLocal(); renderSidebar();
                     toast('Rectangle saved', 'success');
                 });
             }
@@ -1026,29 +784,19 @@ ${JSON.stringify(annotationData, null, 2)}
     // DRAW COMMENT PROMPT
     // ============================================================
     function createFabricCanvasWithComment(pageNum, canvasEl) {
-        const fc = new fabric.Canvas(canvasEl, {
-            selection: false, isDrawingMode: false, renderOnAddRemove: true,
-        });
+        var fc = new fabric.Canvas(canvasEl, { selection:false, isDrawingMode:false, renderOnAddRemove:true });
         fc.lowerCanvasEl.style.pointerEvents = 'none';
-        fc.on('object:modified', () => saveDrawings(pageNum));
-        fc.on('path:created', () => {
+        fc.on('object:modified', function() { saveDrawings(pageNum); });
+        fc.on('path:created', function() {
             saveDrawings(pageNum);
-            const anns = getAnnotations();
-            const drawAnn = anns.find(a => a.type === 'drawing' && a.page === pageNum && !a._prompted);
+            var anns = getAnnotations(), drawAnn = null;
+            for (var j = 0; j < anns.length; j++) { if (anns[j].type === 'drawing' && anns[j].page === pageNum && !anns[j]._prompted) { drawAnn = anns[j]; break; } }
             if (drawAnn && fabricCanvases[pageNum].getObjects().length > 0) {
-                drawAnn._prompted = true;
-                setAnnotations(anns); saveLocal();
-                showCommentModal(`Drawing on page ${pageNum}`, (comment) => {
-                    const currentAnns = getAnnotations();
-                    const da = currentAnns.find(a => a.type === 'drawing' && a.page === pageNum && a._prompted);
-                    if (da) {
-                        da.comment = comment || '';
-                        delete da._prompted;
-                        setAnnotations(currentAnns);
-                        saveLocal();
-                        renderSidebar();
-                        toast('Drawing saved', 'success');
-                    }
+                drawAnn._prompted = true; setAnnotations(anns); saveLocal();
+                showCommentModal('Drawing on page ' + pageNum, function(comment) {
+                    var currentAnns = getAnnotations(), da = null;
+                    for (var k = 0; k < currentAnns.length; k++) { if (currentAnns[k].type === 'drawing' && currentAnns[k].page === pageNum && currentAnns[k]._prompted) { da = currentAnns[k]; break; } }
+                    if (da) { da.comment = comment || ''; delete da._prompted; setAnnotations(currentAnns); saveLocal(); renderSidebar(); toast('Drawing saved', 'success'); }
                 });
             }
         });
@@ -1059,211 +807,107 @@ ${JSON.stringify(annotationData, null, 2)}
     // ============================================================
     // UNDO & CLEAR
     // ============================================================
-    $('undo-btn').onclick = () => {
-        const cr = $('pdf-scroll-container').getBoundingClientRect();
-        let best = null, bestO = 0;
-        Object.entries(pageContainers).forEach(([pn, el]) => {
-            const r = el.getBoundingClientRect();
-            const o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top));
-            if (o > bestO) { bestO = o; best = parseInt(pn); }
-        });
-        if (!best) return;
-        const fc = fabricCanvases[best];
-        if (!fc) return;
-        const objs = fc.getObjects();
-        if (!objs.length) return;
-        fc.remove(objs[objs.length - 1]); fc.renderAll();
-        saveDrawings(best);
-        toast('Undo', 'success');
+    $('undo-btn').onclick = function() {
+        var cr = $('pdf-scroll-container').getBoundingClientRect(), best = null, bestO = 0;
+        Object.entries(pageContainers).forEach(function(e) { var r = e[1].getBoundingClientRect(), o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top)); if (o > bestO) { bestO = o; best = parseInt(e[0]); } });
+        if (!best) return; var fc = fabricCanvases[best]; if (!fc) return;
+        var objs = fc.getObjects(); if (!objs.length) return;
+        fc.remove(objs[objs.length-1]); fc.renderAll(); saveDrawings(best); toast('Undo', 'success');
     };
-
-    $('clear-page').onclick = () => {
-        const cr = $('pdf-scroll-container').getBoundingClientRect();
-        let best = null, bestO = 0;
-        Object.entries(pageContainers).forEach(([pn, el]) => {
-            const r = el.getBoundingClientRect();
-            const o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top));
-            if (o > bestO) { bestO = o; best = parseInt(pn); }
-        });
-        if (!best) return;
-        const fc = fabricCanvases[best];
-        if (!fc) return;
+    $('clear-page').onclick = function() {
+        var cr = $('pdf-scroll-container').getBoundingClientRect(), best = null, bestO = 0;
+        Object.entries(pageContainers).forEach(function(e) { var r = e[1].getBoundingClientRect(), o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top)); if (o > bestO) { bestO = o; best = parseInt(e[0]); } });
+        if (!best) return; var fc = fabricCanvases[best]; if (!fc) return;
         fc.clear(); fc.renderAll();
-        const anns = getAnnotations().filter(a => a.page !== best);
-        setAnnotations(anns); saveLocal();
-        renderSidebar();
-        toast('Cleared page ' + best, 'success');
+        var anns = getAnnotations().filter(function(a) { return a.page !== best; });
+        setAnnotations(anns); saveLocal(); renderSidebar(); toast('Cleared page ' + best, 'success');
     };
 
     // ============================================================
     // SYNC BUTTON
     // ============================================================
-    $('sync-btn').onclick = () => syncToGitHub();
+    $('sync-btn').onclick = function() { syncToGitHub(); };
 
     // ============================================================
     // PDF LOADING
     // ============================================================
     async function loadPDF(contentsPath, name) {
-        if (isLoadingPDF) return;
-        isLoadingPDF = true;
-
-        Object.values(fabricCanvases).forEach(fc => { try { fc.dispose(); } catch(e){} });
-        fabricCanvases = {};
-        pageContainers = {};
-        
+        if (isLoadingPDF) return; isLoadingPDF = true;
+        Object.values(fabricCanvases).forEach(function(fc) { try { fc.dispose(); } catch(e){} });
+        fabricCanvases = {}; pageContainers = {};
         currentPDFName = name;
-        
-        const pdfNameEl = $('current-pdf-name');
-        if (pdfNameEl) pdfNameEl.textContent = name;
+        var pdfNameEl = $('current-pdf-name'); if (pdfNameEl) pdfNameEl.textContent = name;
         highlightFile(name);
-        
-        const noPdfMsg = $('no-pdf-message');
-        if (noPdfMsg) noPdfMsg.style.display = 'none';
-        
-        const toolbar = $('annotation-toolbar');
-        if (toolbar) toolbar.style.display = 'flex';
-        
-        const scroll = $('pdf-scroll-container');
-        if (!scroll) { isLoadingPDF = false; return; }
+        var noPdfMsg = $('no-pdf-message'); if (noPdfMsg) noPdfMsg.style.display = 'none';
+        var toolbar = $('annotation-toolbar'); if (toolbar) toolbar.style.display = 'flex';
+        var scroll = $('pdf-scroll-container'); if (!scroll) { isLoadingPDF = false; return; }
         scroll.innerHTML = '<div class="text-center py-10 text-white/50"><span class="loading loading-spinner loading-lg"></span><p class="mt-3">Loading PDF...</p></div>';
-
-        // Load local first for instant display
-        loadLocal();
-        renderSidebar();
-
-        // Then load from GitHub in background
-        $('sync-badge').className = 'badge badge-sm badge-info gap-1';
-        $('sync-label').textContent = 'Loading...';
-        loadFromGitHub(name).then(() => {
-            renderSidebar();
-            $('sync-badge').className = 'badge badge-sm badge-ghost gap-1';
-            $('sync-label').textContent = 'GitHub';
-        }).catch(() => {
-            $('sync-badge').className = 'badge badge-sm badge-ghost gap-1';
-            $('sync-label').textContent = 'GitHub';
-        });
-
+        loadLocal(); renderSidebar();
+        $('sync-badge').className = 'badge badge-sm badge-info gap-1'; $('sync-label').textContent = 'Loading...';
+        loadFromGitHub(name).then(function() { renderSidebar(); $('sync-badge').className = 'badge badge-sm badge-ghost gap-1'; $('sync-label').textContent = 'GitHub'; }).catch(function() { $('sync-badge').className = 'badge badge-sm badge-ghost gap-1'; $('sync-label').textContent = 'GitHub'; });
         try {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-            
-            const resp = await fetch(PROXY + '/raw/master/' + contentsPath);
+            var resp = await fetch(PROXY + '/raw/master/' + contentsPath);
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
-            const data = await resp.arrayBuffer();
-            
-            const header = String.fromCharCode.apply(null, new Uint8Array(data.slice(0,5)));
-            if (!header.startsWith('%PDF')) throw new Error('Not a valid PDF');
-
-            const pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+            var data = await resp.arrayBuffer();
+            var header = ''; var bytes = new Uint8Array(data.slice(0,5));
+            for (var i = 0; i < bytes.length; i++) header += String.fromCharCode(bytes[i]);
+            if (header.substring(0,4) !== '%PDF') throw new Error('Not a valid PDF');
+            var pdfDoc = await pdfjsLib.getDocument({ data: data }).promise;
             scroll.innerHTML = '';
-
-            for (let i = 1; i <= pdfDoc.numPages; i++) {
-                const page = await pdfDoc.getPage(i);
-                const vp = page.getViewport({ scale: 1.5 });
-
-                const wrapper = document.createElement('div');
-                wrapper.className = 'page-wrapper';
-                wrapper.style.width = vp.width + 'px';
-                wrapper.style.height = vp.height + 'px';
-                wrapper.dataset.page = i;
-                pageContainers[i] = wrapper;
-
-                const pdfCanvas = document.createElement('canvas');
-                pdfCanvas.width = vp.width; pdfCanvas.height = vp.height;
-                await page.render({ canvasContext: pdfCanvas.getContext('2d'), viewport: vp }).promise;
-                wrapper.appendChild(pdfCanvas);
-
-                const textContent = await page.getTextContent();
-                const textLayer = document.createElement('div');
-                textLayer.className = 'textLayer';
-                textLayer.style.width = vp.width + 'px';
-                textLayer.style.height = vp.height + 'px';
-
-                textContent.items.forEach(item => {
+            for (var p = 1; p <= pdfDoc.numPages; p++) {
+                var page = await pdfDoc.getPage(p), vp = page.getViewport({ scale: 1.5 });
+                var wrapper = document.createElement('div');
+                wrapper.className = 'page-wrapper'; wrapper.style.width = vp.width + 'px'; wrapper.style.height = vp.height + 'px'; wrapper.dataset.page = p; pageContainers[p] = wrapper;
+                var pdfCanvas = document.createElement('canvas'); pdfCanvas.width = vp.width; pdfCanvas.height = vp.height;
+                await page.render({ canvasContext: pdfCanvas.getContext('2d'), viewport: vp }).promise; wrapper.appendChild(pdfCanvas);
+                var textContent = await page.getTextContent(), textLayer = document.createElement('div');
+                textLayer.className = 'textLayer'; textLayer.style.width = vp.width + 'px'; textLayer.style.height = vp.height + 'px';
+                textContent.items.forEach(function(item) {
                     if (!item.str) return;
-                    const tx = pdfjsLib.Util.transform(vp.transform, item.transform);
-                    const fontHeight = Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]);
-                    const style = textContent.styles[item.fontName] || {};
-                    const span = document.createElement('span');
-                    span.textContent = item.str;
-                    span.style.left = tx[4] + 'px';
-                    span.style.top = (tx[5] - fontHeight) + 'px';
-                    span.style.fontSize = fontHeight + 'px';
-                    span.style.fontFamily = style.fontFamily || 'sans-serif';
-                    textLayer.appendChild(span);
+                    var tx = pdfjsLib.Util.transform(vp.transform, item.transform), fontHeight = Math.sqrt(tx[2]*tx[2]+tx[3]*tx[3]);
+                    var style = textContent.styles[item.fontName] || {}, span = document.createElement('span');
+                    span.textContent = item.str; span.style.left = tx[4] + 'px'; span.style.top = (tx[5]-fontHeight) + 'px';
+                    span.style.fontSize = fontHeight + 'px'; span.style.fontFamily = style.fontFamily || 'sans-serif'; textLayer.appendChild(span);
                 });
                 wrapper.appendChild(textLayer);
-
-                const annCanvas = document.createElement('canvas');
-                annCanvas.className = 'ann-canvas';
-                annCanvas.width = vp.width; annCanvas.height = vp.height;
-                wrapper.appendChild(annCanvas);
-
-                createFabricCanvasWithComment(i, annCanvas);
-
-                textLayer.addEventListener('mouseup', () => handleHighlight(i));
-                wrapper.addEventListener('dblclick', (e) => handleSticky(e, i));
-
-                const label = document.createElement('div');
-                label.className = 'page-label';
-                label.textContent = 'Page ' + i;
-                wrapper.appendChild(label);
-
+                var annCanvas = document.createElement('canvas'); annCanvas.className = 'ann-canvas'; annCanvas.width = vp.width; annCanvas.height = vp.height; wrapper.appendChild(annCanvas);
+                createFabricCanvasWithComment(p, annCanvas);
+                textLayer.addEventListener('mouseup', function(pNum) { return function() { handleHighlight(pNum); }; }(p));
+                wrapper.addEventListener('dblclick', function(pNum) { return function(e) { handleSticky(e, pNum); }; }(p));
+                var label = document.createElement('div'); label.className = 'page-label'; label.textContent = 'Page ' + p; wrapper.appendChild(label);
                 scroll.appendChild(wrapper);
             }
-
-            // Restore annotations
-            const savedAnns = getAnnotations();
-            savedAnns.forEach(ann => {
+            var savedAnns = getAnnotations();
+            savedAnns.forEach(function(ann) {
                 if ((ann.type === 'drawing' || ann.type === 'rectangle') && ann.objects && fabricCanvases[ann.page]) {
-                    fabric.util.enlivenObjects(ann.objects, objects => {
-                        objects.forEach(o => fabricCanvases[ann.page].add(o));
-                        fabricCanvases[ann.page].renderAll();
-                    });
+                    fabric.util.enlivenObjects(ann.objects, function(objects) { objects.forEach(function(o) { fabricCanvases[ann.page].add(o); }); fabricCanvases[ann.page].renderAll(); });
                 }
                 if (ann.type === 'comment' && ann.x && ann.y && fabricCanvases[ann.page]) {
-                    const rect = new fabric.Rect({
-                        left: ann.x - 22, top: ann.y - 22, width: 44, height: 44,
-                        fill: '#fef08a', stroke: '#ca8a04', strokeWidth: 2, rx: 4, ry: 4,
-                    });
-                    const txt = new fabric.Text('📝', { left: ann.x - 12, top: ann.y - 14, fontSize: 18 });
-                    fabricCanvases[ann.page].add(new fabric.Group([rect, txt], { left: ann.x - 22, top: ann.y - 22 }));
-                    fabricCanvases[ann.page].renderAll();
+                    var rect = new fabric.Rect({ left:ann.x-22, top:ann.y-22, width:44, height:44, fill:'#fef08a', stroke:'#ca8a04', strokeWidth:2, rx:4, ry:4 });
+                    var txt = new fabric.Text('', { left:ann.x-12, top:ann.y-14, fontSize:18 });
+                    fabricCanvases[ann.page].add(new fabric.Group([rect, txt], { left:ann.x-22, top:ann.y-22 })); fabricCanvases[ann.page].renderAll();
                 }
             });
-
-            setTool('select');
-            renderSidebar();
-            toast(`Loaded ${pdfDoc.numPages} pages with ${savedAnns.length} annotations`, 'success');
-            
+            setTool('select'); renderSidebar();
+            toast('Loaded ' + pdfDoc.numPages + ' pages with ' + savedAnns.length + ' annotations', 'success');
         } catch (err) {
             console.error(err);
-            scroll.innerHTML = `<div class="text-center py-10 text-white">
-                <i data-lucide="alert-triangle" class="w-16 h-16 mx-auto mb-3 text-error opacity-60"></i>
-                <p class="text-error text-lg">${esc(err.message)}</p>
-            </div>`;
-            lucide.createIcons();
-            toast('Error: ' + err.message, 'error');
-        } finally {
-            isLoadingPDF = false;
-        }
+            scroll.innerHTML = '<div class="text-center py-10 text-white"><i data-lucide="alert-triangle" class="w-16 h-16 mx-auto mb-3 text-error opacity-60"></i><p class="text-error text-lg">' + esc(err.message) + '</p></div>';
+            lucide.createIcons(); toast('Error: ' + err.message, 'error');
+        } finally { isLoadingPDF = false; }
     }
 
     // ============================================================
     // PANEL TOGGLES
     // ============================================================
-    $('toggle-browser').onclick = () => {
-        const p = $('browser-panel');
-        if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); }
-    };
-    $('toggle-annotations').onclick = () => {
-        const p = $('annotation-sidebar');
-        if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); }
-    };
+    $('toggle-browser').onclick = function() { var p = $('browser-panel'); if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); } };
+    $('toggle-annotations').onclick = function() { var p = $('annotation-sidebar'); if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); } };
 
     // ============================================================
     // KEYBOARD
     // ============================================================
-    document.addEventListener('keydown', e => {
+    document.addEventListener('keydown', function(e) {
         if (document.activeElement !== document.body && document.activeElement.tagName !== 'BODY') return;
         if (e.key === 'Escape') setTool('select');
         if (e.key === 'h') setTool('highlight');
@@ -1276,7 +920,7 @@ ${JSON.stringify(annotationData, null, 2)}
     // STARTUP
     // ============================================================
     loadLocal();
-    loadDir('').then(() => toast('Connected to DelMedicalRelease', 'success')).catch(err => toast(err.message, 'error'));
+    loadDir('').then(function() { toast('Connected to DelMedicalRelease', 'success'); }).catch(function(err) { toast(err.message, 'error'); });
     </script>
 </body>
 </html>
