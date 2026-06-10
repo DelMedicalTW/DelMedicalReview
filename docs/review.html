@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Review Portal with GitHub Issues</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --muted: #8b949e;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --red: #f85149;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; }
+        
+        /* Toolbar */
+        #toolbar {
+            padding: 12px 24px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-shrink: 0;
+        }
+        #toolbar h1 { font-size: 1.2rem; font-weight: 600; color: var(--text); }
+        #toolbar .badge { background: var(--accent); color: #000; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
+        #status { margin-left: auto; font-size: 0.85rem; color: var(--muted); }
+        
+        /* Main layout */
+        #main { display: flex; flex: 1; overflow: hidden; }
+        
+        /* PDF Viewer */
+        #viewer {
+            flex: 1;
+            overflow-y: auto;
+            background: #525659;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+        .page-wrapper {
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+        .page-wrapper:hover { transform: scale(1.01); }
+        .page-wrapper.selected canvas { outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+        canvas { display: block; box-shadow: 0 8px 24px rgba(0,0,0,0.6); border-radius: 4px; }
+        .page-label {
+            text-align: center;
+            color: #ccc;
+            font-size: 0.8rem;
+            margin-top: 6px;
+            user-select: none;
+        }
+        
+        /* Sidebar */
+        #sidebar {
+            width: 420px;
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+        }
+        #sidebar-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        #sidebar-header h2 { font-size: 1rem; font-weight: 600; }
+        #comments-container { flex: 1; overflow-y: auto; padding: 16px; }
+        
+        .comment-card {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+            margin-bottom: 12px;
+            transition: border-color 0.2s;
+            cursor: pointer;
+        }
+        .comment-card:hover { border-color: var(--accent); }
+        .comment-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+        .comment-header .page-badge {
+            background: #1f6feb33;
+            color: var(--accent);
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .comment-header .author { font-weight: 600; color: var(--text); }
+        .comment-body { font-size: 0.9rem; line-height: 1.5; color: var(--text); }
+        .comment-footer { margin-top: 8px; font-size: 0.75rem; color: var(--muted); display: flex; gap: 12px; }
+        .comment-footer a { color: var(--accent); text-decoration: none; }
+        .comment-footer a:hover { text-decoration: underline; }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .status-open { background: #3fb95033; color: var(--green); }
+        .status-closed { background: #f8514933; color: var(--red); }
+        
+        .empty-state {
+            text-align: center;
+            color: var(--muted);
+            padding: 40px 20px;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .empty-state .icon { font-size: 2.5rem; margin-bottom: 12px; }
+        
+        /* Comment form */
+        #comment-form {
+            padding: 16px 20px;
+            border-top: 1px solid var(--border);
+            display: none;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #comment-form.visible { display: flex; }
+        #comment-form label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+        #comment-form textarea {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-family: inherit;
+            font-size: 0.9rem;
+            resize: vertical;
+            min-height: 80px;
+        }
+        #comment-form textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px #1f6feb44; }
+        #author-input {
+            padding: 6px 12px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.85rem;
+        }
+        .btn-row { display: flex; gap: 8px; align-items: center; }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-primary { background: var(--green); color: #000; }
+        .btn-primary:hover { background: #2ea043; }
+        .btn-primary:disabled { background: #3fb95055; color: #3fb95088; cursor: not-allowed; }
+        .btn-secondary { background: var(--border); color: var(--text); }
+        .btn-secondary:hover { background: #484f58; }
+        .btn-danger { background: transparent; color: var(--red); padding: 4px 8px; font-size: 0.75rem; }
+        
+        #loading-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin 0.6s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Toast */
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            transform: translateY(120px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 100;
+        }
+        #toast.show { transform: translateY(0); opacity: 1; }
+        #toast.error { border-color: var(--red); color: var(--red); }
+        #toast.success { border-color: var(--green); color: var(--green); }
+    </style>
+</head>
+<body>
+    <div id="toolbar">
+        <h1>📄 <span id="doc-title">Draft Review</span></h1>
+        <span class="badge" id="issue-count">0 comments</span>
+        <span id="status">🟢 Connected</span>
+    </div>
+
+    <div id="main">
+        <!-- PDF Viewer -->
+        <div id="viewer">
+            <div class="empty-state">
+                <div class="icon">📖</div>
+                <p>Loading PDF document...</p>
+            </div>
+        </div>
+
+        <!-- Comment Sidebar -->
+        <div id="sidebar">
+            <div id="sidebar-header">
+                <h2>💬 Review Comments</h2>
+                <button class="btn btn-secondary" id="refresh-btn" title="Refresh from GitHub">🔄</button>
+            </div>
+            <div id="comments-container">
+                <div class="empty-state">
+                    <div class="icon">💭</div>
+                    <p>No comments yet.<br>Click any page in the PDF to leave feedback.</p>
+                </div>
+            </div>
+            <div id="comment-form">
+                <label>Comment on <span id="target-page-label">Page ?</span></label>
+                <input type="text" id="author-input" placeholder="Your name" value="" />
+                <textarea id="comment-textarea" placeholder="Write your feedback... (Markdown supported)"></textarea>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="submit-btn">Post as GitHub Issue</button>
+                    <button class="btn btn-secondary" id="cancel-btn">Cancel</button>
+                    <span id="submit-spinner" style="display:none;"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script>
+        // ============================================================
+        // CONFIGURATION - EDIT THESE VALUES
+        // ============================================================
+        const CONFIG = {
+            // The PDF file to review (relative to this HTML file, or absolute URL)
+            PDF_URL: './UserGuide_v2.4_draft.pdf',
+            
+            // GitHub repository details
+            GITHUB_OWNER: 'YOUR_USERNAME',       // e.g., 'my-org'
+            GITHUB_REPO: 'YOUR_REPO_NAME',       // e.g., 'my-docs-repo'
+            
+            // GitHub Personal Access Token (classic) with 'repo' scope
+            // WARNING: Embedding tokens in client-side code is not fully secure.
+            // For public repos, use a fine-grained token scoped only to public_repo.
+            // For private repos, use GitHub Pages secrets or a proxy.
+            GITHUB_TOKEN: 'ghp_xxxxxxxxxxxxxxxxxxxx',
+            
+            // Label applied to all review Issues (creates automatically if not found)
+            ISSUE_LABEL: 'pdf-review',
+            
+            // Draft version identifier (used in Issue title prefix)
+            DRAFT_VERSION: 'v2.4-draft',
+        };
+        // ============================================================
+
+        let pdfDoc = null;
+        let selectedPage = null;
+        let allIssues = [];
+        let isLoading = false;
+
+        // --- Toast Notifications ---
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = type + ' show';
+            setTimeout(() => toast.classList.remove('show'), 3500);
+        }
+
+        // --- GitHub API Helpers ---
+        const API_BASE = `https://api.github.com/repos/${CONFIG.GITHUB_OWNER}/${CONFIG.GITHUB_REPO}`;
+        const HEADERS = {
+            'Authorization': `token ${CONFIG.GITHUB_TOKEN}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'Content-Type': 'application/json',
+        };
+
+        async function githubFetch(url, options = {}) {
+            const response = await fetch(url, { headers: HEADERS, ...options });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(`GitHub API error (${response.status}): ${err.message || response.statusText}`);
+            }
+            return response.json();
+        }
+
+        // Fetch all Issues with our label
+        async function fetchReviewIssues() {
+            const issues = [];
+            let page = 1;
+            while (true) {
+                const url = `${API_BASE}/issues?labels=${CONFIG.ISSUE_LABEL}&state=all&per_page=100&page=${page}`;
+                const batch = await githubFetch(url);
+                if (batch.length === 0) break;
+                issues.push(...batch);
+                page++;
+            }
+            // Filter: only Issues created by our tool (they have a specific body marker)
+            return issues.filter(issue => issue.body && issue.body.includes('<!-- pdf-review-comment -->'));
+        }
+
+        // Create a new Issue for a comment
+        async function createReviewIssue(pageNumber, commentText, authorName) {
+            const title = `[${CONFIG.DRAFT_VERSION}] Page ${pageNumber}: ${commentText.substring(0, 60)}${commentText.length > 60 ? '...' : ''}`;
+            const body = `<!-- pdf-review-comment -->
+**Reviewer:** ${authorName}
+**Page:** ${pageNumber}
+**Draft:** ${CONFIG.DRAFT_VERSION}
+**PDF:** [View PDF](${CONFIG.PDF_URL})
+
+---
+
+${commentText}
+`;
+            const payload = {
+                title,
+                body,
+                labels: [CONFIG.ISSUE_LABEL],
+            };
+            return githubFetch(`${API_BASE}/issues`, {
+                method: 'POST',
+                body: JSON.stringify(payload),
+            });
+        }
+
+        // Close an Issue (mark resolved)
+        async function closeIssue(issueNumber) {
+            return githubFetch(`${API_BASE}/issues/${issueNumber}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ state: 'closed' }),
+            });
+        }
+
+        // --- PDF Rendering ---
+        async function loadPDF() {
+            const viewer = document.getElementById('viewer');
+            try {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+                pdfDoc = await pdfjsLib.getDocument(CONFIG.PDF_URL).promise;
+                document.getElementById('doc-title').textContent = CONFIG.PDF_URL.split('/').pop();
+                
+                viewer.innerHTML = '';
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    const page = await pdfDoc.getPage(i);
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'page-wrapper';
+                    wrapper.dataset.page = i;
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    
+                    const ctx = canvas.getContext('2d');
+                    await page.render({ canvasContext: ctx, viewport }).promise;
+                    
+                    const label = document.createElement('div');
+                    label.className = 'page-label';
+                    label.textContent = `Page ${i}`;
+                    
+                    wrapper.appendChild(canvas);
+                    wrapper.appendChild(label);
+                    
+                    wrapper.addEventListener('click', () => selectPage(i, wrapper));
+                    viewer.appendChild(wrapper);
+                }
+                document.getElementById('status').textContent = `✅ ${pdfDoc.numPages} pages loaded`;
+            } catch (err) {
+                viewer.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚠️</div>
+                        <p><strong>Failed to load PDF</strong></p>
+                        <p style="font-size:0.85rem;">${err.message}</p>
+                        <p style="font-size:0.8rem; margin-top:8px;">
+                            Tip: If you're opening this file locally, serve it via a local web server:<br>
+                            <code>python -m http.server 8080</code> or <code>npx serve .</code>
+                        </p>
+                    </div>`;
+                document.getElementById('status').textContent = '❌ PDF load error';
+            }
+        }
+
+        // --- Page Selection ---
+        function selectPage(pageNum, wrapperElement) {
+            // Deselect all
+            document.querySelectorAll('.page-wrapper').forEach(w => w.classList.remove('selected'));
+            // Select this one
+            wrapperElement.classList.add('selected');
+            selectedPage = pageNum;
+            
+            // Show comment form
+            const form = document.getElementById('comment-form');
+            form.classList.add('visible');
+            document.getElementById('target-page-label').textContent = `Page ${pageNum}`;
+            document.getElementById('comment-textarea').focus();
+            
+            // Scroll sidebar to form
+            form.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function cancelComment() {
+            selectedPage = null;
+            document.getElementById('comment-form').classList.remove('visible');
+            document.getElementById('comment-textarea').value = '';
+            document.querySelectorAll('.page-wrapper').forEach(w => w.classList.remove('selected'));
+        }
+
+        // --- Submit Comment as GitHub Issue ---
+        async function submitComment() {
+            const textarea = document.getElementById('comment-textarea');
+            const authorInput = document.getElementById('author-input');
+            const submitBtn = document.getElementById('submit-btn');
+            const commentText = textarea.value.trim();
+            const authorName = authorInput.value.trim() || 'Anonymous Reviewer';
+            
+            if (!commentText) { showToast('Please enter a comment.', 'error'); return; }
+            if (!selectedPage) { showToast('Please select a page first.', 'error'); return; }
+            
+            isLoading = true;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span id="loading-spinner"></span> Posting...';
+            
+            try {
+                const newIssue = await createReviewIssue(selectedPage, commentText, authorName);
+                showToast(`✅ Issue #${newIssue.number} created!`, 'success');
+                
+                // Clear form and refresh
+                textarea.value = '';
+                cancelComment();
+                await loadComments();
+            } catch (err) {
+                showToast(`❌ Failed: ${err.message}`, 'error');
+            } finally {
+                isLoading = false;
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Post as GitHub Issue';
+            }
+        }
+
+        // --- Load and Display Comments ---
+        async function loadComments() {
+            const container = document.getElementById('comments-container');
+            container.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Loading comments from GitHub...</p></div>';
+            
+            try {
+                allIssues = await fetchReviewIssues();
+                document.getElementById('issue-count').textContent = `${allIssues.length} comment${allIssues.length !== 1 ? 's' : ''}`;
+                
+                if (allIssues.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <div class="icon">💭</div>
+                            <p>No comments yet.</p>
+                            <p style="font-size:0.85rem;">Click any page in the PDF to leave feedback.</p>
+                        </div>`;
+                    return;
+                }
+                
+                // Sort: open first, then by page number
+                allIssues.sort((a, b) => {
+                    if (a.state !== b.state) return a.state === 'open' ? -1 : 1;
+                    const pageA = parseInt(a.title.match(/Page (\d+)/)?.[1]) || 0;
+                    const pageB = parseInt(b.title.match(/Page (\d+)/)?.[1]) || 0;
+                    return pageA - pageB;
+                });
+                
+                container.innerHTML = allIssues.map(issue => {
+                    const pageMatch = issue.title.match(/Page (\d+)/);
+                    const pageNum = pageMatch ? pageMatch[1] : '?';
+                    const authorMatch = issue.body.match(/\*\*Reviewer:\*\*\s*(.+)/);
+                    const author = authorMatch ? authorMatch[1] : issue.user.login;
+                    const bodyClean = issue.body
+                        .replace(/<!-- pdf-review-comment -->/g, '')
+                        .replace(/\*\*Reviewer:\*\*.+/g, '')
+                        .replace(/\*\*Page:\*\*.+/g, '')
+                        .replace(/\*\*Draft:\*\*.+/g, '')
+                        .replace(/\*\*PDF:\*\*.+/g, '')
+                        .replace(/---/g, '')
+                        .trim();
+                    
+                    return `
+                        <div class="comment-card" onclick="navigateToPage(${pageNum})">
+                            <div class="comment-header">
+                                <span class="page-badge">📄 Page ${pageNum}</span>
+                                <span class="author">${escapeHtml(author)}</span>
+                                <span class="status-badge ${issue.state === 'open' ? 'status-open' : 'status-closed'}">${issue.state}</span>
+                            </div>
+                            <div class="comment-body">${escapeHtml(bodyClean)}</div>
+                            <div class="comment-footer">
+                                <a href="${issue.html_url}" target="_blank">#${issue.number} on GitHub ↗</a>
+                                <span>${new Date(issue.created_at).toLocaleDateString()}</span>
+                                ${issue.state === 'open' ? `<button class="btn btn-danger" onclick="event.stopPropagation(); resolveIssue(${issue.number})" title="Mark as resolved">✓ Resolve</button>` : ''}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (err) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">⚠️</div>
+                        <p><strong>Could not load comments</strong></p>
+                        <p style="font-size:0.85rem;">${err.message}</p>
+                        <p style="font-size:0.8rem; margin-top:8px;">Check your GitHub token and repository settings.</p>
+                    </div>`;
+                document.getElementById('status').textContent = '❌ GitHub API error';
+            }
+        }
+
+        function navigateToPage(pageNum) {
+            const wrapper = document.querySelector(`.page-wrapper[data-page="${pageNum}"]`);
+            if (wrapper) {
+                wrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // Brief highlight
+                wrapper.classList.add('selected');
+                setTimeout(() => wrapper.classList.remove('selected'), 2000);
+            }
+        }
+
+        async function resolveIssue(issueNumber) {
+            try {
+                await closeIssue(issueNumber);
+                showToast(`✅ Issue #${issueNumber} resolved.`, 'success');
+                await loadComments();
+            } catch (err) {
+                showToast(`❌ Failed to resolve: ${err.message}`, 'error');
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('submit-btn').addEventListener('click', submitComment);
+        document.getElementById('cancel-btn').addEventListener('click', cancelComment);
+        document.getElementById('refresh-btn').addEventListener('click', async () => {
+            await loadComments();
+            showToast('Comments refreshed from GitHub', 'success');
+        });
+        
+        // Keyboard shortcut: Escape to cancel
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && document.getElementById('comment-form').classList.contains('visible')) {
+                cancelComment();
+            }
+            // Ctrl+Enter to submit
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && document.getElementById('comment-form').classList.contains('visible')) {
+                e.preventDefault();
+                submitComment();
+            }
+        });
+
+        // Auto-save author name
+        const savedAuthor = localStorage.getItem('pdf-review-author');
+        if (savedAuthor) document.getElementById('author-input').value = savedAuthor;
+        document.getElementById('author-input').addEventListener('change', (e) => {
+            localStorage.setItem('pdf-review-author', e.target.value);
+        });
+
+        // --- Initialize ---
+        async function init() {
+            document.getElementById('status').textContent = '⏳ Loading...';
+            await loadPDF();
+            await loadComments();
+            document.getElementById('status').textContent = '🟢 Ready';
+        }
+
+        init();
+    </script>
+</body>
+</html>
