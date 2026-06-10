@@ -1,93 +1,56 @@
-// ============================================================
-// ANNOTATION SIDEBAR
-// ============================================================
 var Sidebar = (function() {
-    var annotationList, annotationCount;
+    function $(id) { return document.getElementById(id); }
+    function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 
-    function escapeHtml(str) {
-        var d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
-    }
-
-    function render(annotations) {
-        if (!annotationList) annotationList = document.getElementById('annotation-list');
-        if (!annotationCount) annotationCount = document.getElementById('annotation-count');
-        if (!annotationList || !annotationCount) return;
-
-        if (!annotations || !annotations.length) {
-            annotationList.innerHTML =
-                '<div class="text-center py-8 text-base-content/40 text-sm">' +
-                '<i data-lucide="message-circle" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>' +
-                '<p>No annotations yet.</p>' +
-                '<p class="text-xs mt-1">Use the toolbar to add highlights, drawings, or notes.</p></div>';
-            annotationCount.textContent = '0';
-            if (typeof lucide !== 'undefined') lucide.createIcons();
+    function render(anns) {
+        var list = $('annotation-list');
+        var count = $('annotation-count');
+        if (!list || !count) { return; }
+        if (!anns || !anns.length) {
+            list.innerHTML = '<div class="text-center py-8 text-base-content/40 text-sm"><i data-lucide="inbox" class="w-10 h-10 mx-auto mb-2 opacity-40"></i><p>No annotations yet</p></div>';
+            count.textContent = '0';
+            lucide.createIcons();
             return;
         }
-
-        annotations.sort(function(a, b) { return a.page - b.page; });
-        annotationCount.textContent = annotations.length;
-
-        var typeLabels = {
+        anns.sort(function(a, b) { return a.page - b.page; });
+        count.textContent = anns.length;
+        var typeConfig = {
             highlight: { label: 'Highlight', cls: 'badge-warning', icon: 'highlighter' },
-            quote: { label: 'Quote', cls: 'badge-secondary', icon: 'quote' },
             drawing: { label: 'Drawing', cls: 'badge-info', icon: 'pen' },
-            comment: { label: 'Note', cls: 'badge-success', icon: 'sticky-note' },
-            rectangle: { label: 'Rectangle', cls: 'badge-info', icon: 'square' },
+            rectangle: { label: 'Rectangle', cls: 'badge-accent', icon: 'square-dashed' },
+            comment: { label: 'Note', cls: 'badge-success', icon: 'sticky-note' }
         };
-
-        annotationList.innerHTML = annotations.map(function(ann) {
-            var tl = typeLabels[ann.type] || { label: ann.type, cls: 'badge-ghost', icon: 'pin' };
+        list.innerHTML = anns.map(function(a, i) {
+            var tc = typeConfig[a.type] || { label: a.type, cls: 'badge-ghost', icon: 'circle' };
             var body = '';
-            if (ann.quotedText) {
-                body += '<blockquote class="border-l-2 border-secondary pl-2 my-1 text-base-content/60 italic text-xs">' + escapeHtml(ann.quotedText) + '</blockquote>';
-            }
-            if (ann.comment) {
-                body += '<p class="text-sm">' + escapeHtml(ann.comment) + '</p>';
-            }
-            if (ann.type === 'drawing' && !ann.comment) {
-                body += '<p class="text-base-content/40 text-xs">Drawing annotation</p>';
-            }
-            var issueLink = ann.issueNumber
-                ? '<a href="' + ann.issueUrl + '" target="_blank" class="text-info text-xs ml-auto hover:underline flex items-center gap-1"><i data-lucide="external-link" class="w-3 h-3"></i> #' + ann.issueNumber + '</a>'
-                : '<span class="text-warning text-xs ml-auto flex items-center gap-1"><i data-lucide="cloud-off" class="w-3 h-3"></i> Unsaved</span>';
-            var resolved = ann.issueState === 'closed'
-                ? '<span class="badge badge-success badge-xs ml-1"><i data-lucide="check" class="w-3 h-3 inline"></i> Resolved</span>' : '';
-
-            return '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary transition-colors" onclick="Annotations.scrollToPage(' + ann.page + ')">' +
+            if (a.comment) { body = body + '<p class="text-sm mt-1">' + esc(a.comment) + '</p>'; }
+            if (a.type === 'drawing' && !a.comment) { body = body + '<p class="text-xs text-base-content/40 mt-1">Freehand drawing</p>'; }
+            if (a.type === 'rectangle' && !a.comment) { body = body + '<p class="text-xs text-base-content/40 mt-1">Area selection</p>'; }
+            var gitHubLink = a.issueNumber
+                ? '<a href="' + a.issueUrl + '" target="_blank" class="text-xs text-info hover:underline flex items-center gap-1 ml-auto" onclick="event.stopPropagation()"><i data-lucide="external-link" class="w-3 h-3"></i> #' + a.issueNumber + '</a>'
+                : '<span class="text-xs text-warning flex items-center gap-1 ml-auto"><i data-lucide="cloud-off" class="w-3 h-3"></i></span>';
+            return '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary hover:shadow-md transition-all" onclick="Annotations.scrollToPage(' + a.page + ')">' +
                 '<div class="card-body p-3">' +
-                '<div class="flex items-center gap-2 flex-wrap text-xs text-base-content/50">' +
-                '<span class="badge badge-xs ' + tl.cls + '"><i data-lucide="' + tl.icon + '" class="w-3 h-3 inline"></i> ' + tl.label + '</span>' +
-                '<span>Page ' + ann.page + '</span>' + issueLink + resolved + '</div>' +
-                '<div class="mt-1">' + body + '</div>' +
-                '<div class="text-xs text-base-content/40 mt-1">' + new Date(ann.timestamp).toLocaleString() + '</div>' +
+                '<div class="flex items-center gap-2 flex-wrap">' +
+                '<span class="badge badge-xs ' + tc.cls + ' gap-1"><i data-lucide="' + tc.icon + '" class="w-3 h-3"></i> ' + tc.label + '</span>' +
+                '<span class="text-xs text-base-content/50">Page ' + a.page + '</span>' +
+                (a.reviewer ? '<span class="text-xs text-base-content/40"><i data-lucide="user" class="w-3 h-3 inline"></i> ' + esc(a.reviewer) + '</span>' : '') +
+                gitHubLink +
+                '<button class="btn btn-ghost btn-xs text-error p-0 min-h-0 h-6 w-6" onclick="event.stopPropagation();Annotations.deleteAnnotation(' + i + ')" title="Delete"><i data-lucide="x" class="w-3 h-3"></i></button>' +
+                '</div>' + body +
+                '<div class="text-xs text-base-content/40">' + new Date(a.timestamp).toLocaleString() + '</div>' +
                 '</div></div>';
         }).join('');
-
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+        lucide.createIcons();
     }
 
     function clear() {
-        if (!annotationList) annotationList = document.getElementById('annotation-list');
-        if (!annotationCount) annotationCount = document.getElementById('annotation-count');
-        if (!annotationList || !annotationCount) return;
-        annotationList.innerHTML =
-            '<div class="text-center py-8 text-base-content/40 text-sm">' +
-            '<i data-lucide="message-circle" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>' +
-            '<p>No annotations yet.</p></div>';
-        annotationCount.textContent = '0';
-        if (typeof lucide !== 'undefined') lucide.createIcons();
+        var list = $('annotation-list');
+        var count = $('annotation-count');
+        if (list) { list.innerHTML = '<div class="text-center py-8 text-base-content/40 text-sm"><i data-lucide="inbox" class="w-10 h-10 mx-auto mb-2 opacity-40"></i><p>No annotations yet</p></div>'; }
+        if (count) { count.textContent = '0'; }
+        lucide.createIcons();
     }
 
-    // Lazy init on first use
-    function ensureInit() {
-        if (!annotationList) annotationList = document.getElementById('annotation-list');
-        if (!annotationCount) annotationCount = document.getElementById('annotation-count');
-    }
-
-    return {
-        render: function(anns) { ensureInit(); render(anns); },
-        clear: function() { ensureInit(); clear(); },
-    };
+    return { render: render, clear: clear };
 })();
