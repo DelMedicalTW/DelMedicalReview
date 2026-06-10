@@ -60,7 +60,10 @@ var App = (function() {
 // ============================================================
 // UI UTILITIES
 // ============================================================
-const UI = (function() {
+var UI = (function() {
+    if (typeof UI !== 'undefined' && UI.showToast) {
+        return UI;
+    }
     const toast = document.getElementById('toast');
     const toastAlert = document.getElementById('toast-alert');
     const toastMessage = document.getElementById('toast-message');
