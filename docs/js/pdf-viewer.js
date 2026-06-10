@@ -34,7 +34,7 @@ var PDFViewer = (function() {
                 wrapper.className = 'page-wrapper';
                 wrapper.style.width = vp.width + 'px';
                 wrapper.style.height = vp.height + 'px';
-                wrapper.dataset.page = p;
+                wrapper.setAttribute('data-page', String(p));
 
                 var pdfCanvas = document.createElement('canvas');
                 pdfCanvas.width = vp.width;
@@ -48,6 +48,7 @@ var PDFViewer = (function() {
                 textLayer.className = 'textLayer';
                 textLayer.style.width = vp.width + 'px';
                 textLayer.style.height = vp.height + 'px';
+                textLayer.setAttribute('data-page', String(p));
                 textContent.items.forEach(function(item) {
                     if (!item.str) { return; }
                     var tx = pdfjsLib.Util.transform(vp.transform, item.transform);
@@ -68,16 +69,31 @@ var PDFViewer = (function() {
                 annCanvas.className = 'ann-canvas';
                 annCanvas.width = vp.width;
                 annCanvas.height = vp.height;
+                annCanvas.setAttribute('data-page', String(p));
                 wrapper.appendChild(annCanvas);
 
                 Annotations.createFabricCanvas(p, annCanvas);
                 Annotations.registerPage(p, wrapper);
 
-                // Events
-                (function(pNum) {
-                    textLayer.addEventListener('mouseup', function() { Annotations.handleHighlight(pNum); });
-                    wrapper.addEventListener('dblclick', function(e) { Annotations.handleSticky(e, pNum); });
-                })(p);
+                // CRITICAL FIX: Use wrapper events that read data-page from the target
+                wrapper.addEventListener('mouseup', function(e) {
+                    var pw = e.currentTarget.closest('.page-wrapper');
+                    if (pw) {
+                        var pageNum = parseInt(pw.getAttribute('data-page'));
+                        if (!isNaN(pageNum)) {
+                            Annotations.handleHighlight(pageNum);
+                        }
+                    }
+                });
+                wrapper.addEventListener('dblclick', function(e) {
+                    var pw = e.currentTarget.closest('.page-wrapper');
+                    if (pw) {
+                        var pageNum = parseInt(pw.getAttribute('data-page'));
+                        if (!isNaN(pageNum)) {
+                            Annotations.handleSticky(e, pageNum);
+                        }
+                    }
+                });
 
                 // Page label
                 var label = document.createElement('div');
@@ -88,7 +104,6 @@ var PDFViewer = (function() {
                 scroll.appendChild(wrapper);
             }
 
-            // Restore annotations
             Annotations.restoreAnnotations();
             Annotations.setTool('select');
             Sidebar.render(Annotations.getAnnotations());
