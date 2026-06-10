@@ -1,90 +1,130 @@
 // ============================================================
-// ANNOTATION SIDEBAR
+// PDF LOADING & RENDERING
 // ============================================================
-const Sidebar = (function() {
+var PDFViewer = (function() {
+    if (typeof PDFViewer !== 'undefined' && PDFViewer.loadPDF) {
+        return PDFViewer;
+    }
+    let pdfDoc = null;
     const $ = function(id) { return document.getElementById(id); };
-    const annotationList = $('annotation-list');
-    const annotationCount = $('annotation-count');
+    const pdfScrollContainer = $('pdf-scroll-container');
+    const noPdfMessage = $('no-pdf-message');
+    const annotationToolbar = $('annotation-toolbar');
 
-    function escapeHtml(str) {
-        const d = document.createElement('div');
-        d.textContent = str;
-        return d.innerHTML;
-    }
+    async function loadPDF(contentsPath, name) {
+        // Cleanup previous
+        Annotations.dispose();
+        pdfDoc = null;
+        pdfScrollContainer.innerHTML = '';
+        Sidebar.clear();
 
-    function render(annotations) {
-        if (!annotations.length) {
-            annotationList.innerHTML =
-                '<div class="text-center py-8 text-base-content/40 text-sm">' +
-                '<i data-lucide="message-circle" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>' +
-                '<p>No annotations yet.</p>' +
-                '<p class="text-xs mt-1">Use the toolbar to add highlights, drawings, or notes.</p>' +
+        // Show loading
+        noPdfMessage.style.display = 'none';
+        annotationToolbar.style.display = 'flex';
+        pdfScrollContainer.innerHTML = '<div class="text-center py-10 text-base-content/50 text-sm">Loading PDF...</div>';
+
+        try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+            const pdfData = await API.fetchPDF(contentsPath);
+            console.log('PDF size:', pdfData.byteLength, 'bytes');
+
+            const firstBytes = new Uint8Array(pdfData.slice(0, 5));
+            const header = String.fromCharCode.apply(null, firstBytes);
+            if (!header.startsWith('%PDF')) throw new Error('Not a valid PDF. Header: "' + header + '"');
+
+            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+            pdfDoc = await loadingTask.promise;
+            console.log('PDF loaded. Pages:', pdfDoc.numPages);
+
+            pdfScrollContainer.innerHTML = '';
+            for (let i = 1; i <= pdfDoc.numPages; i++) {
+                await renderPage(i);
+            }
+
+            // Load annotations from GitHub Issues
+            try {
+                const issues = await API.fetchIssuesForPDF(name);
+                const anns = [];
+                issues.forEach(function(issue) {
+                    if (!issue.body || issue.body.indexOf('<!-- delmed-pdf-annotation -->') === -1) return;
+                    const match = issue.body.match(/```json\n([\s\S]*?)\n```/);
+                    if (!match) return;
+                    try {
+                        const data = JSON.parse(match[1]);
+                        data.issueNumber = issue.number;
+                        data.issueState = issue.state;
+                        data.issueUrl = issue.html_url;
+                        anns.push(data);
+                    } catch (e) {}
+                });
+                Annotations.setAnnotations(anns);
+                for (let i = 1; i <= pdfDoc.numPages; i++) {
+                    Annotations.restoreAnnotationsForPage(i);
+                }
+                Sidebar.render(anns);
+                if (anns.length) UI.showToast('Loaded ' + anns.length + ' annotations', 'success');
+            } catch (err) {
+                console.warn('Could not load annotations:', err.message);
+            }
+
+            UI.showToast('Loaded ' + pdfDoc.numPages + ' pages', 'success');
+        } catch (err) {
+            console.error('PDF load error:', err);
+            pdfScrollContainer.innerHTML =
+                '<div class="flex-1 flex flex-col items-center justify-center text-base-content/40 text-center p-10">' +
+                '<i data-lucide="alert-triangle" class="w-16 h-16 mb-4 text-error opacity-50"></i>' +
+                '<h3 class="text-xl font-semibold text-error">Failed to load PDF</h3>' +
+                '<p class="mt-2 text-sm">' + err.message + '</p>' +
                 '</div>';
-            annotationCount.textContent = '0';
             lucide.createIcons();
-            return;
+            UI.showToast('Failed: ' + err.message, 'error');
         }
-        annotations.sort(function(a, b) { return a.page - b.page; });
-        annotationCount.textContent = annotations.length;
-
-        const typeLabels = {
-            highlight: { label: 'Highlight', cls: 'badge-warning', icon: 'highlighter' },
-            quote: { label: 'Quote', cls: 'badge-secondary', icon: 'quote' },
-            drawing: { label: 'Drawing', cls: 'badge-info', icon: 'pen' },
-            comment: { label: 'Note', cls: 'badge-success', icon: 'sticky-note' },
-            rectangle: { label: 'Rectangle', cls: 'badge-info', icon: 'square' },
-        };
-
-        annotationList.innerHTML = annotations.map(function(ann) {
-            const tl = typeLabels[ann.type] || { label: ann.type, cls: 'badge-ghost', icon: 'pin' };
-            let body = '';
-            if (ann.quotedText) {
-                body += '<blockquote class="border-l-2 border-secondary pl-2 my-1 text-base-content/60 italic text-xs">' +
-                    escapeHtml(ann.quotedText) + '</blockquote>';
-            }
-            if (ann.comment) {
-                body += '<p class="text-sm">' + escapeHtml(ann.comment) + '</p>';
-            }
-            if (ann.type === 'drawing' && !ann.comment) {
-                body += '<p class="text-base-content/40 text-xs">Drawing annotation</p>';
-            }
-
-            const issueLink = ann.issueNumber
-                ? '<a href="' + ann.issueUrl + '" target="_blank" class="text-info text-xs ml-auto hover:underline flex items-center gap-1"><i data-lucide="external-link" class="w-3 h-3"></i> #' + ann.issueNumber + '</a>'
-                : '<span class="text-warning text-xs ml-auto flex items-center gap-1"><i data-lucide="cloud-off" class="w-3 h-3"></i> Unsaved</span>';
-            const resolved = ann.issueState === 'closed'
-                ? '<span class="badge badge-success badge-xs ml-1"><i data-lucide="check" class="w-3 h-3 inline"></i> Resolved</span>' : '';
-
-            return '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary transition-colors" onclick="Annotations.scrollToPage(' + ann.page + ')">' +
-                '<div class="card-body p-3">' +
-                '<div class="flex items-center gap-2 flex-wrap text-xs text-base-content/50">' +
-                '<span class="badge badge-xs ' + tl.cls + '"><i data-lucide="' + tl.icon + '" class="w-3 h-3 inline"></i> ' + tl.label + '</span>' +
-                '<span>Page ' + ann.page + '</span>' +
-                issueLink +
-                resolved +
-                '</div>' +
-                '<div class="mt-1">' + body + '</div>' +
-                '<div class="text-xs text-base-content/40 mt-1">' + new Date(ann.timestamp).toLocaleString() + '</div>' +
-                '</div>' +
-                '</div>';
-        }).join('');
-
-        // Re-initialize Lucide icons
-        lucide.createIcons();
     }
 
-    function clear() {
-        annotationList.innerHTML =
-            '<div class="text-center py-8 text-base-content/40 text-sm">' +
-            '<i data-lucide="message-circle" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>' +
-            '<p>No annotations yet.</p>' +
-            '</div>';
-        annotationCount.textContent = '0';
-        lucide.createIcons();
+    async function renderPage(pageNum) {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: CONFIG.PDF_SCALE });
+
+        const pageContainer = document.createElement('div');
+        pageContainer.className = 'page-container relative shadow-lg bg-white flex-shrink-0';
+        pageContainer.style.width = viewport.width + 'px';
+        pageContainer.style.height = viewport.height + 'px';
+        pageContainer.dataset.page = pageNum;
+
+        // PDF canvas
+        const pdfCanvas = document.createElement('canvas');
+        pdfCanvas.width = viewport.width;
+        pdfCanvas.height = viewport.height;
+        pdfCanvas.className = 'block';
+        const ctx = pdfCanvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+        pageContainer.appendChild(pdfCanvas);
+
+        // Annotation layer
+        const annCanvas = document.createElement('canvas');
+        annCanvas.width = viewport.width;
+        annCanvas.height = viewport.height;
+        annCanvas.className = 'annotation-layer absolute top-0 left-0';
+        annCanvas.style.width = viewport.width + 'px';
+        annCanvas.style.height = viewport.height + 'px';
+        pageContainer.appendChild(annCanvas);
+
+        // Fabric canvas
+        Annotations.createFabricCanvas(pageNum, annCanvas);
+        Annotations.registerPageContainer(pageNum, pageContainer);
+
+        // Page label
+        const label = document.createElement('div');
+        label.className = 'absolute bottom-2 right-3 bg-black/60 text-white px-2 py-0.5 rounded text-xs pointer-events-none';
+        label.textContent = 'Page ' + pageNum;
+        pageContainer.appendChild(label);
+
+        pdfScrollContainer.appendChild(pageContainer);
     }
 
     return {
-        render: render,
-        clear: clear,
+        loadPDF: loadPDF,
+        getPDFDoc: function() { return pdfDoc; },
     };
 })();
