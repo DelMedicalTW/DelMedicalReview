@@ -29,7 +29,7 @@ const API = (function() {
         if (!resp.ok) {
             let err = {};
             try { err = await resp.json(); } catch (e) {}
-            throw new Error(`API error (${resp.status}): ${err.message || resp.statusText}`);
+            throw new Error('API error (' + resp.status + '): ' + (err.message || resp.statusText));
         }
         return resp.json();
     }
@@ -43,7 +43,7 @@ const API = (function() {
             const proxyPDFUrl = BASE + '/raw/master/' + contentsPath;
             const response = await fetch(proxyPDFUrl);
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status} - Failed to load PDF`);
+                throw new Error('HTTP ' + response.status + ' - Failed to load PDF');
             }
             return response.arrayBuffer();
         },
@@ -53,7 +53,8 @@ const API = (function() {
             const allIssues = [];
             let page = 1;
             while (true) {
-                const batch = await githubFetch('/issues?labels=' + label + '&state=all&per_page=100&page=' + page);
+                const url = '/issues?labels=' + label + '&state=all&per_page=100&page=' + page;
+                const batch = await githubFetch(url);
                 if (!batch.length) break;
                 allIssues.push(...batch);
                 page++;
@@ -63,19 +64,17 @@ const API = (function() {
 
         async createAnnotationIssue(pdfName, pageNum, annotationData) {
             const label = CONFIG.ISSUE_LABEL_PREFIX + ':' + encodeURIComponent(pdfName);
-            const typeIcons = { highlight: '🖍', quote: '💬', drawing: '✏️', comment: '📝', rectangle: '⬜' };
-            const icon = typeIcons[annotationData.type] || '📌';
-            const title = `[${pdfName}] Page ${pageNum}: ${icon} ${annotationData.type} annotation`;
-            const body = `<!-- delmed-pdf-annotation -->
-**PDF:** ${pdfName}
-**Page:** ${pageNum}
-**Type:** ${annotationData.type}
-**Color:** ${annotationData.color || 'default'}
-**Data:** \`\`\`json
-${JSON.stringify(annotationData, null, 2)}
-\`\`\`
-${annotationData.quotedText ? '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n' : ''}
-${annotationData.comment || ''}`;
+            const typeIcons = { highlight: 'highlighter', quote: 'quote', drawing: 'pen', comment: 'sticky-note', rectangle: 'square' };
+            const icon = typeIcons[annotationData.type] || 'pin';
+            const title = '[' + pdfName + '] Page ' + pageNum + ': ' + annotationData.type + ' annotation';
+            const body = '<!-- delmed-pdf-annotation -->\n' +
+                '**PDF:** ' + pdfName + '\n' +
+                '**Page:** ' + pageNum + '\n' +
+                '**Type:** ' + annotationData.type + '\n' +
+                '**Color:** ' + (annotationData.color || 'default') + '\n' +
+                '**Data:** ```json\n' + JSON.stringify(annotationData, null, 2) + '\n```\n' +
+                (annotationData.quotedText ? '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n' : '') +
+                (annotationData.comment || '');
             return githubFetch('/issues', {
                 method: 'POST',
                 body: JSON.stringify({ title, body, labels: [label] }),
