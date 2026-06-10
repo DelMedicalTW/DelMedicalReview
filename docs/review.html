@@ -59,7 +59,7 @@
                 </button>
             </div>
             <div class="relative m-3">
-                <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"></i>
+                <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40 pointer-events-none"></i>
                 <input type="text" class="input input-bordered input-sm w-full pl-8" id="search-input" placeholder="Search files..." />
             </div>
             <div class="flex-1 overflow-y-auto px-1" id="file-list">
@@ -89,10 +89,10 @@
                     </button>
                 </div>
                 <span class="text-xs text-base-content/50 ml-2">Color:</span>
-                <span class="w-6 h-6 rounded-full border-2 border-white shadow-[0_0_0_2px_var(--fallback-p,oklch(var(--p)))] cursor-pointer selected" data-color="rgba(255,213,79,0.4)" style="background:#ffd54f;"></span>
-                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer" data-color="rgba(88,166,255,0.4)" style="background:#58a6ff;"></span>
-                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer" data-color="rgba(63,185,80,0.4)" style="background:#3fb950;"></span>
-                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer" data-color="rgba(248,81,73,0.4)" style="background:#f85149;"></span>
+                <span class="w-6 h-6 rounded-full border-2 border-white shadow-[0_0_0_2px_var(--fallback-p,oklch(var(--p)))] cursor-pointer selected color-btn" data-color="rgba(255,213,79,0.4)" style="background:#ffd54f;"></span>
+                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(88,166,255,0.4)" style="background:#58a6ff;"></span>
+                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(63,185,80,0.4)" style="background:#3fb950;"></span>
+                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(248,81,73,0.4)" style="background:#f85149;"></span>
                 <div class="flex-1"></div>
                 <button class="btn btn-ghost btn-sm" id="clear-page-annotations">
                     <i data-lucide="trash-2" class="w-4 h-4"></i> Clear Page
@@ -116,7 +116,7 @@
         <aside class="w-[380px] min-w-[380px] bg-base-200 border-l border-base-300 flex flex-col overflow-hidden transition-all duration-300" id="annotation-sidebar">
             <div class="p-3 border-b border-base-300 flex items-center justify-between flex-shrink-0">
                 <h3 class="font-semibold text-sm flex items-center gap-2">
-                    <i data-lucide="message-square-text" class="w-4 h-4"></i> Comments & Annotations
+                    <i data-lucide="message-square-text" class="w-4 h-4"></i> Comments &amp; Annotations
                 </h3>
                 <span class="text-xs text-base-content/50" id="annotation-count">0</span>
             </div>
@@ -140,10 +140,10 @@
     <!-- Quote Popup -->
     <div class="fixed bg-base-200 border border-primary rounded-lg px-3 py-2 text-sm cursor-pointer z-[100] hidden shadow-lg hover:bg-primary hover:text-primary-content flex items-center gap-1.5" id="quote-popup">
         <i data-lucide="quote" class="w-3.5 h-3.5"></i>
-        <span>Quote & Comment</span>
+        <span>Quote &amp; Comment</span>
     </div>
 
-    <!-- Scripts -->
+    <!-- Scripts (load order matters) -->
     <script src="js/config.js"></script>
     <script src="js/api.js"></script>
     <script src="js/browser.js"></script>
