@@ -529,7 +529,6 @@
         const CONFIG = {
             GITHUB_OWNER: 'DelMedicalTW',
             GITHUB_REPO: 'DelMedicalRelease',
-            // Cloudflare Worker proxy -- NO token in client code
             PROXY_URL: 'https://pdf-review-proxy.mmuqeem.workers.dev',
             ISSUE_LABEL_PREFIX: 'pdf-review',
         };
@@ -574,10 +573,6 @@
             return /Rev_\d+[A-Za-z]/i.test(filename);
         }
 
-        function getBaseName(path) {
-            return path.split('/').pop();
-        }
-
         // ============================================================
         // GITHUB API (via Cloudflare Proxy)
         // ============================================================
@@ -594,11 +589,8 @@
             }
 
             var fetchOptions = {
-                headers: {
-                    'Accept': 'application/vnd.github.v3+json',
-                },
+                headers: { 'Accept': 'application/vnd.github.v3+json' },
             };
-
             if (options.method) fetchOptions.method = options.method;
             if (options.body) {
                 fetchOptions.body = options.body;
@@ -618,12 +610,6 @@
             return githubFetch('/contents/' + path);
         }
 
-        async function getRawFilePDF(contentsPath) {
-    var proxyUrl = API_BASE + '/raw/' + contentsPath;
-    var resp = await fetch(proxyUrl);
-    if (!resp.ok) throw new Error('Failed to download PDF: ' + resp.status);
-    return await resp.blob();
-}
         async function fetchIssuesForPDF(pdfName) {
             var label = CONFIG.ISSUE_LABEL_PREFIX + ':' + encodeURIComponent(pdfName);
             var allIssues = [];
@@ -643,8 +629,7 @@
             var typeIcons = { highlight: '\uD83D\uDD8D', quote: '\uD83D\uDCAC', drawing: '\u270F',
                 comment: '\uD83D\uDCDD', rectangle: '\u2B1C' };
             var icon = typeIcons[annotationData.type] || '\uD83D\uDCCC';
-            var title = '[' + pdfName + '] Page ' + pageNum + ': ' + icon + ' ' + annotationData.type +
-                ' annotation';
+            var title = '[' + pdfName + '] Page ' + pageNum + ': ' + icon + ' ' + annotationData.type + ' annotation';
             var body = '<!-- delmed-pdf-annotation -->\n' +
                 '**PDF:** ' + pdfName + '\n' +
                 '**Page:** ' + pageNum + '\n' +
@@ -654,10 +639,7 @@
                 (annotationData.quotedText ? '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n' : '') +
                 (annotationData.comment || '');
             var payload = { title: title, body: body, labels: [label] };
-            return githubFetch('/issues', {
-                method: 'POST',
-                body: JSON.stringify(payload),
-            });
+            return githubFetch('/issues', { method: 'POST', body: JSON.stringify(payload) });
         }
 
         // ============================================================
@@ -672,19 +654,18 @@
             try {
                 var contents = await fetchContents(path);
                 if (!Array.isArray(contents)) {
-                    fileList.innerHTML =
-                        '<div class="loading-indicator">This is a file, not a directory.</div>';
+                    fileList.innerHTML = '<div class="loading-indicator">This is a file, not a directory.</div>';
                     return;
                 }
                 var folders = contents.filter(function(c) { return c.type === 'dir'; }).sort(function(a, b) {
                     return a.name.localeCompare(b.name);
                 });
-                var pdfs = contents.filter(function(c) { return c.type === 'file' && c.name.toLowerCase()
-                        .endsWith('.pdf'); }).sort(function(a, b) { return a.name.localeCompare(b.name); });
+                var pdfs = contents.filter(function(c) {
+                    return c.type === 'file' && c.name.toLowerCase().endsWith('.pdf');
+                }).sort(function(a, b) { return a.name.localeCompare(b.name); });
 
                 if (folders.length === 0 && pdfs.length === 0) {
-                    fileList.innerHTML =
-                        '<div class="loading-indicator">No folders or PDFs found here.</div>';
+                    fileList.innerHTML = '<div class="loading-indicator">No folders or PDFs found here.</div>';
                     return;
                 }
 
@@ -692,8 +673,7 @@
                 folders.forEach(function(folder) {
                     html += '<div class="folder-item" data-path="' + folder.path + '">' +
                         '<span class="icon">\uD83D\uDCC1</span>' +
-                        '<span class="name">' + escapeHtml(folder.name) + '</span>' +
-                        '</div>';
+                        '<span class="name">' + escapeHtml(folder.name) + '</span></div>';
                 });
                 pdfs.forEach(function(pdf) {
                     var draft = isDraft(pdf.name);
@@ -703,9 +683,7 @@
                     html += '<div class="file-item' + active + '" data-path="' + pdf.path +
                         '" data-name="' + escapeHtml(pdf.name) + '">' +
                         '<span class="icon">\uD83D\uDCC4</span>' +
-                        '<span class="name">' + escapeHtml(pdf.name) + '</span>' +
-                        badge +
-                        '</div>';
+                        '<span class="name">' + escapeHtml(pdf.name) + '</span>' + badge + '</div>';
                 });
                 fileList.innerHTML = html;
 
@@ -713,13 +691,11 @@
                     el.addEventListener('click', function() { loadDirectory(el.dataset.path); });
                 });
                 fileList.querySelectorAll('.file-item').forEach(function(el) {
-                    el.addEventListener('click', function() { loadPDF(el.dataset.path, el.dataset
-                            .name); });
+                    el.addEventListener('click', function() { loadPDF(el.dataset.path, el.dataset.name); });
                 });
                 document.getElementById('back-btn').disabled = !path;
             } catch (err) {
-                fileList.innerHTML = '<div class="loading-indicator">Error: ' + escapeHtml(err.message) +
-                    '</div>';
+                fileList.innerHTML = '<div class="loading-indicator">Error: ' + escapeHtml(err.message) + '</div>';
             }
         }
 
@@ -729,8 +705,7 @@
             var html = '<span data-path="">DelMedicalRelease</span>';
             parts.forEach(function(part, i) {
                 var subpath = parts.slice(0, i + 1).join('/');
-                html += ' <span class="sep">/</span> <span data-path="' + subpath + '">' + escapeHtml(
-                    part) + '</span>';
+                html += ' <span class="sep">/</span> <span data-path="' + subpath + '">' + escapeHtml(part) + '</span>';
             });
             bc.innerHTML = html;
             bc.querySelectorAll('span[data-path]').forEach(function(s) {
@@ -746,22 +721,18 @@
 
         document.getElementById('search-input').addEventListener('input', function(e) {
             var query = e.target.value.toLowerCase();
-            document.querySelectorAll('#file-list .file-item, #file-list .folder-item').forEach(function(
-            el) {
-                var name = (el.querySelector('.name') ? el.querySelector('.name').textContent : '')
-                    .toLowerCase();
+            document.querySelectorAll('#file-list .file-item, #file-list .folder-item').forEach(function(el) {
+                var name = (el.querySelector('.name') ? el.querySelector('.name').textContent : '').toLowerCase();
                 el.style.display = name.indexOf(query) !== -1 ? '' : 'none';
             });
         });
 
         // ============================================================
-        // PDF LOADING & RENDERING
+        // PDF LOADING & RENDERING (FIXED)
         // ============================================================
         async function loadPDF(contentsPath, name) {
             currentPDFName = name;
             currentPDFUrl = contentsPath;
-            console.log('Contents path:', contentsPath);
-            console.log('PDF name:', name);
             annotations = [];
             fabricCanvases = {};
             pageContainers = {};
@@ -779,22 +750,37 @@
                 pdfjsLib.GlobalWorkerOptions.workerSrc =
                     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-                // Load PDF via proxy using /raw/ endpoint
-                // Add branch prefix - GitHub raw URLs need the branch name
-                var decodedPath = decodeURIComponent(contentsPath);
-                // Prepend 'main' branch (or 'master' if your repo uses that)
-                var branchName = 'master';
-                var rawPath = branchName + '/' + decodedPath;
-                var proxyPDFUrl = API_BASE + '/raw/' + encodeURIComponent(rawPath).replace(/%2F/g, '/');
+                // Build the proxy URL with master branch
+                var proxyPDFUrl = API_BASE + '/raw/master/' + contentsPath;
                 console.log('Loading PDF from:', proxyPDFUrl);
-                console.log('Original contents path:', contentsPath);
 
-                var loadingTask = pdfjsLib.getDocument({
-                    url: proxyPDFUrl,
-                    withCredentials: false,
-                    disableRange: false,
-                    disableStream: false,
-                });
+                // Fetch PDF manually as ArrayBuffer
+                var response = await fetch(proxyPDFUrl);
+                console.log('Response status:', response.status);
+                console.log('Content-Type:', response.headers.get('Content-Type'));
+
+                if (!response.ok) {
+                    var errorText = await response.text();
+                    console.error('Error response:', errorText.substring(0, 200));
+                    throw new Error('HTTP ' + response.status + ' - Failed to load PDF');
+                }
+
+                var pdfData = await response.arrayBuffer();
+                console.log('PDF size:', pdfData.byteLength, 'bytes');
+
+                // Verify it's a valid PDF
+                var firstBytes = new Uint8Array(pdfData.slice(0, 5));
+                var header = String.fromCharCode.apply(null, firstBytes);
+                console.log('File header:', header);
+
+                if (!header.startsWith('%PDF')) {
+                    throw new Error('File does not appear to be a valid PDF. Header: "' + header + '"');
+                }
+
+                // Load from ArrayBuffer
+                var loadingTask = pdfjsLib.getDocument({ data: pdfData });
+                pdfDoc = await loadingTask.promise;
+                console.log('PDF loaded successfully. Pages:', pdfDoc.numPages);
 
                 document.getElementById('pdf-scroll-container').innerHTML = '';
                 for (var i = 1; i <= pdfDoc.numPages; i++) {
@@ -802,14 +788,17 @@
                 }
                 await loadAnnotationsFromIssues();
                 showToast('Loaded ' + pdfDoc.numPages + ' pages', 'success');
+
             } catch (err) {
+                console.error('PDF load error:', err);
                 document.getElementById('pdf-scroll-container').innerHTML =
                     '<div id="no-pdf-message" style="display:flex;">' +
                     '<div class="icon">&#x26A0;</div>' +
                     '<h3>Failed to load PDF</h3>' +
                     '<p>' + escapeHtml(err.message) + '</p>' +
+                    '<p style="font-size:0.8rem;color:var(--muted);">Path: ' + escapeHtml(contentsPath) + '</p>' +
                     '</div>';
-                showToast('Failed to load PDF: ' + err.message, 'error');
+                showToast('Failed: ' + err.message, 'error');
             }
         }
 
@@ -867,8 +856,7 @@
         // ============================================================
         function setToolMode(tool) {
             currentTool = tool;
-            document.querySelectorAll('.tool-btn[data-tool]').forEach(function(b) { b.classList.remove(
-                    'active'); });
+            document.querySelectorAll('.tool-btn[data-tool]').forEach(function(b) { b.classList.remove('active'); });
             var activeBtn = document.querySelector('.tool-btn[data-tool="' + tool + '"]');
             if (activeBtn) activeBtn.classList.add('active');
 
@@ -888,8 +876,7 @@
 
         document.querySelectorAll('.color-btn').forEach(function(btn) {
             btn.addEventListener('click', function() {
-                document.querySelectorAll('.color-btn').forEach(function(b) { b.classList.remove(
-                        'selected'); });
+                document.querySelectorAll('.color-btn').forEach(function(b) { b.classList.remove('selected'); });
                 btn.classList.add('selected');
                 currentColor = btn.dataset.color;
                 if (currentTool === 'draw') {
@@ -924,7 +911,6 @@
             popup.dataset.quotedText = text;
 
             addHighlightFromSelection(selection, pageNum);
-
             setTimeout(function() { popup.style.display = 'none'; }, 4000);
         }
 
@@ -968,14 +954,8 @@
                 var left = r.left - containerRect.left;
                 var top = r.top - containerRect.top;
                 var rect = new fabric.Rect({
-                    left: left,
-                    top: top,
-                    width: r.width,
-                    height: r.height,
-                    fill: currentColor,
-                    selectable: true,
-                    evented: true,
-                    opacity: 0.5,
+                    left: left, top: top, width: r.width, height: r.height,
+                    fill: currentColor, selectable: true, evented: true, opacity: 0.5,
                 });
                 fc.add(rect);
             }
@@ -999,33 +979,21 @@
             if (!fc) return;
 
             var circle = new fabric.Circle({
-                left: x - 10,
-                top: y - 10,
-                radius: 10,
-                fill: '#3fb950',
-                opacity: 0.7,
-                selectable: true,
+                left: x - 10, top: y - 10, radius: 10,
+                fill: '#3fb950', opacity: 0.7, selectable: true,
             });
             var text = new fabric.Text('\uD83D\uDCDD', {
-                left: x - 10,
-                top: y - 12,
-                fontSize: 16,
-                selectable: false,
+                left: x - 10, top: y - 12, fontSize: 16, selectable: false,
             });
             var group = new fabric.Group([circle, text], {
-                left: x - 10,
-                top: y - 10,
-                selectable: true,
+                left: x - 10, top: y - 10, selectable: true,
             });
             fc.add(group);
             fc.renderAll();
 
             var annotation = {
-                type: 'comment',
-                page: pageNum,
-                comment: comment,
-                x: Math.round(x),
-                y: Math.round(y),
+                type: 'comment', page: pageNum, comment: comment,
+                x: Math.round(x), y: Math.round(y),
                 timestamp: new Date().toISOString(),
             };
             annotations.push(annotation);
@@ -1053,15 +1021,10 @@
             rectStart = { x: pointer.x, y: pointer.y };
 
             tempRect = new fabric.Rect({
-                left: pointer.x,
-                top: pointer.y,
-                width: 0,
-                height: 0,
+                left: pointer.x, top: pointer.y, width: 0, height: 0,
                 fill: 'transparent',
                 stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
-                strokeWidth: 2,
-                selectable: false,
-                evented: false,
+                strokeWidth: 2, selectable: false, evented: false,
             });
             fc.add(tempRect);
         });
@@ -1080,8 +1043,7 @@
             tempRect.set({
                 left: width > 0 ? rectStart.x : pointer.x,
                 top: height > 0 ? rectStart.y : pointer.y,
-                width: Math.abs(width),
-                height: Math.abs(height),
+                width: Math.abs(width), height: Math.abs(height),
             });
             fc.renderAll();
         });
@@ -1092,10 +1054,7 @@
             if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
                 tempRect.set({ selectable: true, evented: true });
                 var target = e.target.closest('.page-container');
-                if (target) {
-                    var pageNum = parseInt(target.dataset.page);
-                    saveAnnotationState(pageNum);
-                }
+                if (target) saveAnnotationState(parseInt(target.dataset.page));
             } else if (tempRect) {
                 if (tempRect.canvas) tempRect.canvas.remove(tempRect);
             }
@@ -1113,8 +1072,7 @@
             var existing = -1;
             for (var i = 0; i < annotations.length; i++) {
                 if (annotations[i].type === 'drawing' && annotations[i].page === pageNum) {
-                    existing = i;
-                    break;
+                    existing = i; break;
                 }
             }
             if (existing >= 0) {
@@ -1122,11 +1080,8 @@
                 annotations[existing].timestamp = new Date().toISOString();
             } else if (objects.length > 0) {
                 annotations.push({
-                    type: 'drawing',
-                    page: pageNum,
-                    objects: objects,
-                    color: currentColor,
-                    timestamp: new Date().toISOString(),
+                    type: 'drawing', page: pageNum, objects: objects,
+                    color: currentColor, timestamp: new Date().toISOString(),
                 });
             }
             renderAnnotationList();
@@ -1151,8 +1106,7 @@
             try {
                 var issues = await fetchIssuesForPDF(currentPDFName);
                 issues.forEach(function(issue) {
-                    if (!issue.body || issue.body.indexOf('<!-- delmed-pdf-annotation -->') ===
-                        -1) return;
+                    if (!issue.body || issue.body.indexOf('<!-- delmed-pdf-annotation -->') === -1) return;
                     var jsonMatch = issue.body.match(/```json\n([\s\S]*?)\n```/);
                     if (!jsonMatch) return;
                     try {
@@ -1185,9 +1139,7 @@
                     ann.issueNumber = issue.number;
                     ann.issueUrl = issue.html_url;
                     saved++;
-                } catch (err) {
-                    console.error('Save failed:', err);
-                }
+                } catch (err) { console.error('Save failed:', err); }
             }
             if (saved > 0) showToast('Saved ' + saved + ' annotations as GitHub Issues', 'success');
             else showToast('All annotations already saved.', 'success');
@@ -1215,12 +1167,9 @@
                 var pageNum = entry[0];
                 var el = entry[1];
                 var rect = el.getBoundingClientRect();
-                var overlap = Math.max(0, Math.min(rect.bottom, containerRect.bottom) - Math.max(rect
-                    .top, containerRect.top));
-                if (overlap > bestOverlap) {
-                    bestOverlap = overlap;
-                    bestPage = parseInt(pageNum);
-                }
+                var overlap = Math.max(0, Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top));
+                if (overlap > bestOverlap) { bestOverlap = overlap;
+                    bestPage = parseInt(pageNum); }
             });
             return bestPage;
         }
@@ -1232,8 +1181,7 @@
             var list = document.getElementById('annotation-list');
             var count = document.getElementById('annotation-count');
             if (annotations.length === 0) {
-                list.innerHTML =
-                    '<div style="color:var(--muted);text-align:center;padding:20px;font-size:0.85rem;">No annotations yet. Use the toolbar to add highlights, drawings, or notes.</div>';
+                list.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px;font-size:0.85rem;">No annotations yet. Use the toolbar to add highlights, drawings, or notes.</div>';
                 count.textContent = '0';
                 return;
             }
@@ -1251,33 +1199,18 @@
             list.innerHTML = annotations.map(function(ann) {
                 var tl = typeLabels[ann.type] || { label: ann.type, cls: 'ann-type-comment' };
                 var body = '';
-                if (ann.quotedText) {
-                    body += '<blockquote>' + escapeHtml(ann.quotedText) + '</blockquote>';
-                }
-                if (ann.comment) {
-                    body += '<p>' + escapeHtml(ann.comment) + '</p>';
-                }
-                if (ann.type === 'drawing' && !ann.comment) {
-                    body += '<p style="color:var(--muted);">Drawing annotation</p>';
-                }
-                var issueLink = '';
-                if (ann.issueNumber) {
-                    issueLink =
-                        '<a href="' + ann.issueUrl + '" target="_blank" style="color:var(--muted);margin-left:auto;">#' +
-                        ann.issueNumber + ' \u2197</a>';
-                } else {
-                    issueLink =
-                        '<span style="color:var(--yellow);margin-left:auto;">Unsaved</span>';
-                }
+                if (ann.quotedText) body += '<blockquote>' + escapeHtml(ann.quotedText) + '</blockquote>';
+                if (ann.comment) body += '<p>' + escapeHtml(ann.comment) + '</p>';
+                if (ann.type === 'drawing' && !ann.comment) body += '<p style="color:var(--muted);">Drawing annotation</p>';
+                var issueLink = ann.issueNumber ?
+                    '<a href="' + ann.issueUrl + '" target="_blank" style="color:var(--muted);margin-left:auto;">#' + ann.issueNumber + ' \u2197</a>' :
+                    '<span style="color:var(--yellow);margin-left:auto;">Unsaved</span>';
                 var resolvedBadge = ann.issueState === 'closed' ?
                     '<span style="color:var(--green);font-size:0.7rem;">\u2713 Resolved</span>' : '';
                 return '<div class="annotation-card" onclick="scrollToPage(' + ann.page + ')">' +
                     '<div class="ann-header">' +
                     '<span class="ann-type ' + tl.cls + '">' + tl.label + '</span>' +
-                    '<span>Page ' + ann.page + '</span>' +
-                    issueLink +
-                    resolvedBadge +
-                    '</div>' +
+                    '<span>Page ' + ann.page + '</span>' + issueLink + resolvedBadge + '</div>' +
                     '<div class="ann-body">' + body + '</div>' +
                     '<div class="ann-footer"><span>' + new Date(ann.timestamp).toLocaleString() + '</span></div>' +
                     '</div>';
@@ -1289,9 +1222,7 @@
             if (container) {
                 container.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 container.style.boxShadow = '0 0 0 4px var(--accent)';
-                setTimeout(function() {
-                    container.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)';
-                }, 1500);
+                setTimeout(function() { container.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)'; }, 1500);
             }
         }
 
@@ -1309,18 +1240,9 @@
         // KEYBOARD SHORTCUTS
         // ============================================================
         document.addEventListener('keydown', function(e) {
-            // Escape = select tool
-            if (e.key === 'Escape') {
-                setToolMode('select');
-            }
-            // H = highlight
-            if (e.key === 'h' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) {
-                setToolMode('highlight');
-            }
-            // D = draw
-            if (e.key === 'd' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) {
-                setToolMode('draw');
-            }
+            if (e.key === 'Escape') setToolMode('select');
+            if (e.key === 'h' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) setToolMode('highlight');
+            if (e.key === 'd' && !e.ctrlKey && !e.metaKey && document.activeElement === document.body) setToolMode('draw');
         });
 
         // ============================================================
