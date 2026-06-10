@@ -7,16 +7,19 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
 }
 
-/* Active tool button */
+/* Active tool button in join group */
 [data-tool].active {
     background-color: oklch(var(--p));
     color: oklch(var(--pc));
     font-weight: 600;
 }
 
-/* Color button selected state */
+/* Color button states */
 .color-btn {
-    transition: all 0.15s;
+    transition: all 0.15s ease;
+}
+.color-btn:hover {
+    transform: scale(1.15);
 }
 .color-btn.selected {
     border-color: white !important;
@@ -26,26 +29,27 @@
 /* File browser items */
 #file-list > div {
     border-left: 3px solid transparent;
-    transition: background 0.1s;
+    transition: background 0.1s, border-color 0.1s;
 }
 #file-list > div:hover {
-    background-color: oklch(var(--b3));
+    background-color: oklch(var(--b3) / 0.7);
 }
 #file-list > div.bg-primary\/10 {
     border-left-color: oklch(var(--p));
+    background-color: oklch(var(--p) / 0.1);
 }
 
-/* Annotation layer pointer events */
+/* Annotation layer */
 .annotation-layer {
     pointer-events: auto !important;
 }
 
-/* Quote popup */
+/* Quote popup transition */
 #quote-popup {
     transition: background 0.15s, color 0.15s;
 }
 
-/* Panel collapse transitions */
+/* Panel collapse */
 #browser-panel,
 #annotation-sidebar {
     transition: width 0.3s ease, min-width 0.3s ease;
@@ -80,4 +84,27 @@
 }
 .breadcrumbs a:hover {
     text-decoration: underline;
+}
+
+/* Annotation cards */
+#annotation-list .card {
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+#annotation-list .card:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Toast animation */
+#toast {
+    animation: slideUp 0.3s ease;
+}
+@keyframes slideUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
 }
