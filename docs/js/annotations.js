@@ -2,29 +2,27 @@
 // ANNOTATION TOOLS (Fabric.js)
 // ============================================================
 var Annotations = (function() {
-    if (typeof Annotations !== 'undefined' && Annotations.setToolMode) {
-        return Annotations;
-    }
-    let currentTool = 'select';
-    let currentColor = 'rgba(255,213,79,0.4)';
-    let annotations = [];
-    let fabricCanvases = {};
-    let pageContainers = {};
-    let isDrawingRect = false;
-    let rectStart = null;
-    let tempRect = null;
+    var currentTool = 'select';
+    var currentColor = 'rgba(255,213,79,0.4)';
+    var annotations = [];
+    var fabricCanvases = {};
+    var pageContainers = {};
+    var isDrawingRect = false;
+    var rectStart = null;
+    var tempRect = null;
 
-    const $ = function(id) { return document.getElementById(id); };
-    const quotePopup = $('quote-popup');
-    const pdfScrollContainer = $('pdf-scroll-container');
+    var quotePopup, pdfScrollContainer;
+
+    function getEl(id) { return document.getElementById(id); }
 
     function setToolMode(tool) {
         currentTool = tool;
         document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('active'); });
-        const activeBtn = document.querySelector('[data-tool="' + tool + '"]');
+        var activeBtn = document.querySelector('[data-tool="' + tool + '"]');
         if (activeBtn) activeBtn.classList.add('active');
 
-        Object.values(fabricCanvases).forEach(function(fc) {
+        Object.keys(fabricCanvases).forEach(function(key) {
+            var fc = fabricCanvases[key];
             if (!fc) return;
             fc.isDrawingMode = (tool === 'draw');
             fc.selection = (tool === 'select' || tool === 'highlight' || tool === 'comment');
@@ -38,17 +36,18 @@ var Annotations = (function() {
     function setColor(color) {
         currentColor = color;
         document.querySelectorAll('.color-btn').forEach(function(b) { b.classList.remove('selected'); });
-        const selected = document.querySelector('[data-color="' + color + '"]');
+        var selected = document.querySelector('[data-color="' + color + '"]');
         if (selected) selected.classList.add('selected');
         if (currentTool === 'draw') {
-            Object.values(fabricCanvases).forEach(function(fc) {
+            Object.keys(fabricCanvases).forEach(function(key) {
+                var fc = fabricCanvases[key];
                 if (fc) fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)');
             });
         }
     }
 
     function createFabricCanvas(pageNum, annCanvas) {
-        const fc = new fabric.Canvas(annCanvas, {
+        var fc = new fabric.Canvas(annCanvas, {
             selection: true,
             isDrawingMode: false,
             renderOnAddRemove: true,
@@ -69,18 +68,18 @@ var Annotations = (function() {
 
     function handleTextSelection(e, pageNum) {
         if (currentTool !== 'highlight') return;
-        const selection = window.getSelection();
-        const text = selection.toString().trim();
+        var selection = window.getSelection();
+        var text = selection.toString().trim();
         if (!text) return;
-        const container = pageContainers[pageNum];
+        var container = pageContainers[pageNum];
         if (!container || !container.contains(selection.anchorNode)) return;
 
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
+        var range = selection.getRangeAt(0);
+        var rect = range.getBoundingClientRect();
 
         quotePopup.style.display = 'flex';
-        quotePopup.style.left = (rect.left + rect.width / 2 - 60) + 'px';
-        quotePopup.style.top = (rect.bottom + 10) + 'px';
+        quotePopup.style.left = Math.max(10, rect.left + rect.width / 2 - 70) + 'px';
+        quotePopup.style.top = Math.max(10, rect.bottom + 10) + 'px';
         quotePopup.dataset.pageNum = pageNum;
         quotePopup.dataset.quotedText = text;
 
@@ -88,43 +87,42 @@ var Annotations = (function() {
         setTimeout(function() { quotePopup.style.display = 'none'; }, 4000);
     }
 
-    quotePopup.addEventListener('click', async function() {
-        const pageNum = parseInt(quotePopup.dataset.pageNum);
-        const quotedText = quotePopup.dataset.quotedText;
-        const comment = prompt('Add a comment to this quote:', '');
-        if (comment === null) return;
+    quotePopup = getEl('quote-popup');
+    if (quotePopup) {
+        quotePopup.addEventListener('click', async function() {
+            var pageNum = parseInt(quotePopup.dataset.pageNum);
+            var quotedText = quotePopup.dataset.quotedText;
+            var comment = prompt('Add a comment to this quote:', '');
+            if (comment === null) return;
 
-        const annotation = {
-            type: 'quote',
-            page: pageNum,
-            quotedText: quotedText,
-            comment: comment || '',
-            color: currentColor,
-            timestamp: new Date().toISOString(),
-        };
-        annotations.push(annotation);
+            var annotation = {
+                type: 'quote', page: pageNum, quotedText: quotedText,
+                comment: comment || '', color: currentColor, timestamp: new Date().toISOString(),
+            };
+            annotations.push(annotation);
 
-        try {
-            await API.createAnnotationIssue(App.getCurrentPDFName(), pageNum, annotation);
-            UI.showToast('Quote saved as GitHub Issue', 'success');
-        } catch (err) {
-            UI.showToast('Failed to save quote: ' + err.message, 'error');
-        }
-        Sidebar.render(annotations);
-        quotePopup.style.display = 'none';
-    });
+            try {
+                await API.createAnnotationIssue(App.getCurrentPDFName(), pageNum, annotation);
+                UI.showToast('Quote saved as GitHub Issue', 'success');
+            } catch (err) {
+                UI.showToast('Failed to save quote: ' + err.message, 'error');
+            }
+            Sidebar.render(annotations);
+            quotePopup.style.display = 'none';
+        });
+    }
 
     function addHighlightFromSelection(selection, pageNum) {
-        const range = selection.getRangeAt(0);
-        const container = pageContainers[pageNum];
+        var range = selection.getRangeAt(0);
+        var container = pageContainers[pageNum];
         if (!container) return;
-        const containerRect = container.getBoundingClientRect();
-        const rects = range.getClientRects();
-        const fc = fabricCanvases[pageNum];
+        var containerRect = container.getBoundingClientRect();
+        var rects = range.getClientRects();
+        var fc = fabricCanvases[pageNum];
         if (!fc) return;
 
-        for (let i = 0; i < rects.length; i++) {
-            const r = rects[i];
+        for (var i = 0; i < rects.length; i++) {
+            var r = rects[i];
             fc.add(new fabric.Rect({
                 left: r.left - containerRect.left,
                 top: r.top - containerRect.top,
@@ -142,31 +140,30 @@ var Annotations = (function() {
 
     function handlePageDoubleClick(e, pageNum) {
         if (currentTool !== 'comment') return;
-        const container = pageContainers[pageNum];
+        var container = pageContainers[pageNum];
         if (!container) return;
-        const rect = container.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const comment = prompt('Add a sticky note comment:', '');
+        var rect = container.getBoundingClientRect();
+        var x = e.clientX - rect.left;
+        var y = e.clientY - rect.top;
+        var comment = prompt('Add a sticky note comment:', '');
         if (!comment) return;
 
-        const fc = fabricCanvases[pageNum];
+        var fc = fabricCanvases[pageNum];
         if (!fc) return;
 
-        const circle = new fabric.Circle({
+        var circle = new fabric.Circle({
             left: x - 10, top: y - 10, radius: 10,
             fill: '#3fb950', opacity: 0.7, selectable: true,
         });
-        const textObj = new fabric.Text('\uD83D\uDCDD', {
+        var textObj = new fabric.Text('📝', {
             left: x - 10, top: y - 12, fontSize: 16, selectable: false,
         });
         fc.add(new fabric.Group([circle, textObj], { left: x - 10, top: y - 10, selectable: true }));
         fc.renderAll();
 
-        const annotation = {
+        var annotation = {
             type: 'comment', page: pageNum, comment: comment,
-            x: Math.round(x), y: Math.round(y),
-            timestamp: new Date().toISOString(),
+            x: Math.round(x), y: Math.round(y), timestamp: new Date().toISOString(),
         };
         annotations.push(annotation);
         saveAnnotationState(pageNum);
@@ -177,66 +174,74 @@ var Annotations = (function() {
         Sidebar.render(annotations);
     }
 
-    // Rectangle drawing
-    pdfScrollContainer.addEventListener('mousedown', function(e) {
-        if (currentTool !== 'rectangle') return;
-        const target = e.target.closest('.page-container');
-        if (!target) return;
-        const pageNum = parseInt(target.dataset.page);
-        const fc = fabricCanvases[pageNum];
-        if (!fc) return;
+    // Rectangle drawing on pdfScrollContainer
+    pdfScrollContainer = getEl('pdf-scroll-container');
+    if (pdfScrollContainer) {
+        pdfScrollContainer.addEventListener('mousedown', function(e) {
+            if (currentTool !== 'rectangle') return;
+            var target = e.target.closest('.page-container');
+            if (!target) return;
+            var pageNum = parseInt(target.dataset.page);
+            var fc = fabricCanvases[pageNum];
+            if (!fc) return;
 
-        const pointer = fc.getPointer(e);
-        isDrawingRect = true;
-        rectStart = { x: pointer.x, y: pointer.y };
-        tempRect = new fabric.Rect({
-            left: pointer.x, top: pointer.y, width: 0, height: 0,
-            fill: 'transparent', stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
-            strokeWidth: 2, selectable: false, evented: false,
+            var pointer = fc.getPointer(e);
+            isDrawingRect = true;
+            rectStart = { x: pointer.x, y: pointer.y };
+            tempRect = new fabric.Rect({
+                left: pointer.x, top: pointer.y, width: 0, height: 0,
+                fill: 'transparent', stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
+                strokeWidth: 2, selectable: false, evented: false,
+            });
+            fc.add(tempRect);
         });
-        fc.add(tempRect);
-    });
 
-    pdfScrollContainer.addEventListener('mousemove', function(e) {
-        if (!isDrawingRect || !tempRect) return;
-        const target = e.target.closest('.page-container');
-        if (!target) return;
-        const fc = fabricCanvases[parseInt(target.dataset.page)];
-        if (!fc) return;
+        pdfScrollContainer.addEventListener('mousemove', function(e) {
+            if (!isDrawingRect || !tempRect) return;
+            var target = e.target.closest('.page-container');
+            if (!target) return;
+            var fc = fabricCanvases[parseInt(target.dataset.page)];
+            if (!fc) return;
 
-        const pointer = fc.getPointer(e);
-        const w = pointer.x - rectStart.x;
-        const h = pointer.y - rectStart.y;
-        tempRect.set({
-            left: w > 0 ? rectStart.x : pointer.x,
-            top: h > 0 ? rectStart.y : pointer.y,
-            width: Math.abs(w), height: Math.abs(h),
+            var pointer = fc.getPointer(e);
+            var w = pointer.x - rectStart.x;
+            var h = pointer.y - rectStart.y;
+            tempRect.set({
+                left: w > 0 ? rectStart.x : pointer.x,
+                top: h > 0 ? rectStart.y : pointer.y,
+                width: Math.abs(w), height: Math.abs(h),
+            });
+            fc.renderAll();
         });
-        fc.renderAll();
-    });
 
-    pdfScrollContainer.addEventListener('mouseup', function(e) {
-        if (!isDrawingRect) return;
-        isDrawingRect = false;
-        if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
-            tempRect.set({ selectable: true, evented: true });
-            const target = e.target.closest('.page-container');
-            if (target) saveAnnotationState(parseInt(target.dataset.page));
-        } else if (tempRect) {
-            try { tempRect.canvas.remove(tempRect); } catch (er) {}
-        }
-        tempRect = null;
-        rectStart = null;
-    });
+        pdfScrollContainer.addEventListener('mouseup', function(e) {
+            if (!isDrawingRect) return;
+            isDrawingRect = false;
+            if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
+                tempRect.set({ selectable: true, evented: true });
+                var target = e.target.closest('.page-container');
+                if (target) saveAnnotationState(parseInt(target.dataset.page));
+            } else if (tempRect) {
+                try { tempRect.canvas.remove(tempRect); } catch (er) {}
+            }
+            tempRect = null;
+            rectStart = null;
+        });
+    }
 
     function saveAnnotationState(pageNum) {
-        const fc = fabricCanvases[pageNum];
+        var fc = fabricCanvases[pageNum];
         if (!fc) return;
-        const objects = fc.getObjects().map(function(o) { return o.toJSON(); });
-        const existing = annotations.findIndex(function(a) { return a.type === 'drawing' && a.page === pageNum; });
-        if (existing >= 0) {
-            annotations[existing].objects = objects;
-            annotations[existing].timestamp = new Date().toISOString();
+        var objects = fc.getObjects().map(function(o) { return o.toJSON(); });
+        var existingIdx = -1;
+        for (var i = 0; i < annotations.length; i++) {
+            if (annotations[i].type === 'drawing' && annotations[i].page === pageNum) {
+                existingIdx = i; break;
+            }
+        }
+        if (existingIdx >= 0) {
+            annotations[existingIdx].objects = objects;
+            annotations[existingIdx].timestamp = new Date().toISOString();
         } else if (objects.length > 0) {
             annotations.push({
                 type: 'drawing', page: pageNum, objects: objects,
@@ -247,7 +252,7 @@ var Annotations = (function() {
     }
 
     function restoreAnnotationsForPage(pageNum) {
-        const fc = fabricCanvases[pageNum];
+        var fc = fabricCanvases[pageNum];
         if (!fc) return;
         fc.clear();
         annotations.filter(function(a) { return a.page === pageNum; }).forEach(function(ann) {
@@ -261,7 +266,7 @@ var Annotations = (function() {
     }
 
     function clearPageAnnotations(pageNum) {
-        const fc = fabricCanvases[pageNum];
+        var fc = fabricCanvases[pageNum];
         if (!fc) return;
         fc.clear();
         fc.renderAll();
@@ -270,20 +275,22 @@ var Annotations = (function() {
     }
 
     function findMostVisiblePage() {
-        const containerRect = pdfScrollContainer.getBoundingClientRect();
-        let bestPage = null, bestOverlap = 0;
-        Object.entries(pageContainers).forEach(function(entry) {
-            const pageNum = entry[0];
-            const el = entry[1];
-            const rect = el.getBoundingClientRect();
-            const overlap = Math.max(0, Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top));
+        if (!pdfScrollContainer) return null;
+        var containerRect = pdfScrollContainer.getBoundingClientRect();
+        var bestPage = null, bestOverlap = 0;
+        Object.keys(pageContainers).forEach(function(pageNum) {
+            var el = pageContainers[pageNum];
+            var rect = el.getBoundingClientRect();
+            var overlap = Math.max(0, Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top));
             if (overlap > bestOverlap) { bestOverlap = overlap; bestPage = parseInt(pageNum); }
         });
         return bestPage;
     }
 
     function dispose() {
-        Object.values(fabricCanvases).forEach(function(fc) { try { fc.dispose(); } catch (e) {} });
+        Object.keys(fabricCanvases).forEach(function(key) {
+            try { fabricCanvases[key].dispose(); } catch (e) {}
+        });
         fabricCanvases = {};
         pageContainers = {};
         annotations = [];
@@ -292,44 +299,54 @@ var Annotations = (function() {
         tempRect = null;
     }
 
-    // Toolbar events
-    document.querySelectorAll('[data-tool]').forEach(function(btn) {
-        btn.addEventListener('click', function() { setToolMode(btn.dataset.tool); });
-    });
-    document.querySelectorAll('.color-btn').forEach(function(btn) {
-        btn.addEventListener('click', function() { setColor(btn.dataset.color); });
-    });
-    $('clear-page-annotations').addEventListener('click', function() {
-        const page = findMostVisiblePage();
-        if (page) {
-            clearPageAnnotations(page);
-            UI.showToast('Cleared annotations on page ' + page, 'success');
-        }
-    });
-    $('save-annotations-btn').addEventListener('click', async function() {
-        let saved = 0, errors = 0;
-        for (let i = 0; i < annotations.length; i++) {
-            const ann = annotations[i];
-            if (ann.issueNumber) continue;
-            try {
-                const issue = await API.createAnnotationIssue(App.getCurrentPDFName(), ann.page, ann);
-                ann.issueNumber = issue.number;
-                ann.issueUrl = issue.html_url;
-                saved++;
-            } catch (err) { errors++; }
-        }
-        if (saved > 0 && errors === 0) UI.showToast('Saved ' + saved + ' annotations', 'success');
-        else if (saved > 0) UI.showToast('Saved ' + saved + ', ' + errors + ' failed', 'error');
-        else if (errors > 0) UI.showToast('Failed to save ' + errors + ' annotations', 'error');
-        else UI.showToast('All annotations already saved.', 'success');
-        Sidebar.render(annotations);
-    });
+    // Toolbar button event listeners
+    function initToolbar() {
+        document.querySelectorAll('[data-tool]').forEach(function(btn) {
+            btn.addEventListener('click', function() { setToolMode(btn.dataset.tool); });
+        });
+        document.querySelectorAll('.color-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() { setColor(btn.dataset.color); });
+        });
 
-    document.addEventListener('click', function(e) {
-        if (!e.target.closest('#quote-popup') && currentTool !== 'highlight') {
-            quotePopup.style.display = 'none';
-        }
-    });
+        var clearBtn = getEl('clear-page-annotations');
+        if (clearBtn) clearBtn.addEventListener('click', function() {
+            var page = findMostVisiblePage();
+            if (page) { clearPageAnnotations(page); UI.showToast('Cleared annotations on page ' + page, 'success'); }
+        });
+
+        var saveBtn = getEl('save-annotations-btn');
+        if (saveBtn) saveBtn.addEventListener('click', async function() {
+            var saved = 0, errors = 0;
+            for (var i = 0; i < annotations.length; i++) {
+                var ann = annotations[i];
+                if (ann.issueNumber) continue;
+                try {
+                    var issue = await API.createAnnotationIssue(App.getCurrentPDFName(), ann.page, ann);
+                    ann.issueNumber = issue.number;
+                    ann.issueUrl = issue.html_url;
+                    saved++;
+                } catch (err) { errors++; }
+            }
+            if (saved > 0 && errors === 0) UI.showToast('Saved ' + saved + ' annotations', 'success');
+            else if (saved > 0) UI.showToast('Saved ' + saved + ', ' + errors + ' failed', 'error');
+            else if (errors > 0) UI.showToast('Failed to save ' + errors + ' annotations', 'error');
+            else UI.showToast('All annotations already saved.', 'success');
+            Sidebar.render(annotations);
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('#quote-popup') && currentTool !== 'highlight') {
+                if (quotePopup) quotePopup.style.display = 'none';
+            }
+        });
+    }
+
+    // Initialize on DOM ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initToolbar);
+    } else {
+        initToolbar();
+    }
 
     return {
         setToolMode: setToolMode,
@@ -340,10 +357,8 @@ var Annotations = (function() {
         dispose: dispose,
         getAnnotations: function() { return annotations; },
         setAnnotations: function(a) { annotations = a; },
-        getCurrentTool: function() { return currentTool; },
-        getCurrentColor: function() { return currentColor; },
         scrollToPage: function(pageNum) {
-            const container = pageContainers[pageNum];
+            var container = pageContainers[pageNum];
             if (container) {
                 container.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 container.style.boxShadow = '0 0 0 4px var(--fallback-p, oklch(var(--p)))';
