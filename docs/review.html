@@ -5,9 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Del Medical - PDF Review Portal</title>
     
-    <!-- Tailwind CSS + DaisyUI via CDN -->
+    <!-- Tailwind CSS + DaisyUI -->
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     
     <!-- PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -21,9 +24,10 @@
 <body class="h-screen flex flex-col overflow-hidden">
     
     <!-- ===== NAVBAR ===== -->
-    <nav class="navbar bg-base-200 border-b border-base-300 px-4 py-2 flex-shrink-0 z-10">
+    <nav class="navbar bg-base-200 border-b border-base-300 px-4 py-2 flex-shrink-0 z-10 min-h-0">
         <div class="flex-1 flex items-center gap-3">
-            <span class="text-primary font-bold text-lg whitespace-nowrap">📄 Del Medical PDF Review</span>
+            <i data-lucide="file-text" class="w-5 h-5 text-primary"></i>
+            <span class="text-primary font-bold text-lg whitespace-nowrap">Del Medical PDF Review</span>
             <span class="text-base-content/30">|</span>
             <div class="breadcrumbs text-sm overflow-hidden" id="breadcrumb">
                 <ul>
@@ -31,9 +35,13 @@
                 </ul>
             </div>
         </div>
-        <div class="flex-none flex gap-2">
-            <button class="btn btn-ghost btn-sm" id="toggle-browser" title="Toggle file browser">📁</button>
-            <button class="btn btn-ghost btn-sm" id="toggle-annotations" title="Toggle comments">💬</button>
+        <div class="flex-none flex gap-1">
+            <button class="btn btn-ghost btn-sm btn-square" id="toggle-browser" title="Toggle file browser">
+                <i data-lucide="folder-tree" class="w-4 h-4"></i>
+            </button>
+            <button class="btn btn-ghost btn-sm btn-square" id="toggle-annotations" title="Toggle comments">
+                <i data-lucide="message-square-text" class="w-4 h-4"></i>
+            </button>
         </div>
     </nav>
 
@@ -43,10 +51,17 @@
         <!-- File Browser Panel -->
         <aside class="w-80 min-w-[320px] bg-base-200 border-r border-base-300 flex flex-col overflow-hidden transition-all duration-300" id="browser-panel">
             <div class="p-3 border-b border-base-300 flex items-center justify-between flex-shrink-0">
-                <h3 class="font-semibold text-sm">📂 Documents</h3>
-                <button class="btn btn-ghost btn-xs" id="back-btn" disabled>⬅ Back</button>
+                <h3 class="font-semibold text-sm flex items-center gap-2">
+                    <i data-lucide="folder-open" class="w-4 h-4"></i> Documents
+                </h3>
+                <button class="btn btn-ghost btn-xs" id="back-btn" disabled>
+                    <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back
+                </button>
             </div>
-            <input type="text" class="input input-bordered input-sm m-3" id="search-input" placeholder="🔍 Search files..." />
+            <div class="relative m-3">
+                <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-base-content/40"></i>
+                <input type="text" class="input input-bordered input-sm w-full pl-8" id="search-input" placeholder="Search files..." />
+            </div>
             <div class="flex-1 overflow-y-auto px-1" id="file-list">
                 <div class="text-center py-8 text-base-content/50 text-sm">Loading repository...</div>
             </div>
@@ -57,11 +72,21 @@
             <!-- Annotation Toolbar -->
             <div class="bg-base-200 border-b border-base-300 px-3 py-2 flex items-center gap-2 flex-shrink-0 flex-wrap hidden" id="annotation-toolbar">
                 <div class="join">
-                    <button class="join-item btn btn-sm btn-ghost active" data-tool="select">🖱 Select</button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="highlight">🖍 Highlight</button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="draw">✏️ Draw</button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="rectangle">⬜ Rect</button>
-                    <button class="join-item btn btn-sm btn-ghost" data-tool="comment">📝 Note</button>
+                    <button class="join-item btn btn-sm btn-ghost active" data-tool="select">
+                        <i data-lucide="mouse-pointer-2" class="w-4 h-4"></i> Select
+                    </button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="highlight">
+                        <i data-lucide="highlighter" class="w-4 h-4"></i> Highlight
+                    </button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="draw">
+                        <i data-lucide="pen" class="w-4 h-4"></i> Draw
+                    </button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="rectangle">
+                        <i data-lucide="square" class="w-4 h-4"></i> Rect
+                    </button>
+                    <button class="join-item btn btn-sm btn-ghost" data-tool="comment">
+                        <i data-lucide="sticky-note" class="w-4 h-4"></i> Note
+                    </button>
                 </div>
                 <span class="text-xs text-base-content/50 ml-2">Color:</span>
                 <span class="w-6 h-6 rounded-full border-2 border-white shadow-[0_0_0_2px_var(--fallback-p,oklch(var(--p)))] cursor-pointer selected" data-color="rgba(255,213,79,0.4)" style="background:#ffd54f;"></span>
@@ -69,14 +94,18 @@
                 <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer" data-color="rgba(63,185,80,0.4)" style="background:#3fb950;"></span>
                 <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer" data-color="rgba(248,81,73,0.4)" style="background:#f85149;"></span>
                 <div class="flex-1"></div>
-                <button class="btn btn-ghost btn-sm" id="clear-page-annotations">🗑 Clear Page</button>
-                <button class="btn btn-primary btn-sm" id="save-annotations-btn">💾 Save All</button>
+                <button class="btn btn-ghost btn-sm" id="clear-page-annotations">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i> Clear Page
+                </button>
+                <button class="btn btn-primary btn-sm" id="save-annotations-btn">
+                    <i data-lucide="save" class="w-4 h-4"></i> Save All
+                </button>
             </div>
             
             <!-- PDF Canvas Area -->
             <div class="flex-1 overflow-y-auto bg-[#333] relative flex flex-col items-center p-5 gap-4" id="pdf-scroll-container">
                 <div class="flex-1 flex flex-col items-center justify-center text-base-content/40 text-center p-10" id="no-pdf-message">
-                    <div class="text-6xl mb-4">📁</div>
+                    <i data-lucide="file-search" class="w-16 h-16 mb-4 opacity-40"></i>
                     <h3 class="text-xl font-semibold text-base-content/60">Select a PDF to review</h3>
                     <p class="mt-2 text-sm">Browse the file tree on the left to open a document.</p>
                 </div>
@@ -86,7 +115,9 @@
         <!-- Annotation Sidebar -->
         <aside class="w-[380px] min-w-[380px] bg-base-200 border-l border-base-300 flex flex-col overflow-hidden transition-all duration-300" id="annotation-sidebar">
             <div class="p-3 border-b border-base-300 flex items-center justify-between flex-shrink-0">
-                <h3 class="font-semibold text-sm">💬 Comments & Annotations</h3>
+                <h3 class="font-semibold text-sm flex items-center gap-2">
+                    <i data-lucide="message-square-text" class="w-4 h-4"></i> Comments & Annotations
+                </h3>
                 <span class="text-xs text-base-content/50" id="annotation-count">0</span>
             </div>
             <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-2" id="annotation-list">
@@ -100,16 +131,19 @@
     <!-- Toast Notification -->
     <div class="toast toast-end toast-bottom z-50 hidden" id="toast">
         <div class="alert" id="toast-alert">
+            <i data-lucide="check-circle" class="w-4 h-4 hidden" id="toast-icon-success"></i>
+            <i data-lucide="alert-circle" class="w-4 h-4 hidden" id="toast-icon-error"></i>
             <span id="toast-message"></span>
         </div>
     </div>
 
     <!-- Quote Popup -->
-    <div class="fixed bg-base-200 border border-primary rounded-lg px-3 py-2 text-sm cursor-pointer z-[100] hidden shadow-lg hover:bg-primary hover:text-primary-content" id="quote-popup">
-        💬 Quote & Comment
+    <div class="fixed bg-base-200 border border-primary rounded-lg px-3 py-2 text-sm cursor-pointer z-[100] hidden shadow-lg hover:bg-primary hover:text-primary-content flex items-center gap-1.5" id="quote-popup">
+        <i data-lucide="quote" class="w-3.5 h-3.5"></i>
+        <span>Quote & Comment</span>
     </div>
 
-    <!-- Scripts (load order matters) -->
+    <!-- Scripts -->
     <script src="js/config.js"></script>
     <script src="js/api.js"></script>
     <script src="js/browser.js"></script>
@@ -117,5 +151,10 @@
     <script src="js/pdf-viewer.js"></script>
     <script src="js/sidebar.js"></script>
     <script src="js/review.js"></script>
+    
+    <!-- Initialize Lucide Icons -->
+    <script>
+        lucide.createIcons();
+    </script>
 </body>
 </html>
