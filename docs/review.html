@@ -619,15 +619,11 @@
         }
 
         async function getRawFilePDF(contentsPath) {
-            // Use the proxy to get raw file
-            var proxyUrl = API_BASE + '/contents/' + contentsPath;
-            var resp = await fetch(proxyUrl, {
-                headers: { 'Accept': 'application/vnd.github.v3.raw' },
-            });
-            if (!resp.ok) throw new Error('Failed to download PDF: ' + resp.status);
-            return await resp.blob();
-        }
-
+    var proxyUrl = API_BASE + '/raw/' + contentsPath;
+    var resp = await fetch(proxyUrl);
+    if (!resp.ok) throw new Error('Failed to download PDF: ' + resp.status);
+    return await resp.blob();
+}
         async function fetchIssuesForPDF(pdfName) {
             var label = CONFIG.ISSUE_LABEL_PREFIX + ':' + encodeURIComponent(pdfName);
             var allIssues = [];
