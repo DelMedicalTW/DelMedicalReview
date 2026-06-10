@@ -760,6 +760,8 @@
         async function loadPDF(contentsPath, name) {
             currentPDFName = name;
             currentPDFUrl = contentsPath;
+            console.log('Contents path:', contentsPath);
+            console.log('PDF name:', name);
             annotations = [];
             fabricCanvases = {};
             pageContainers = {};
@@ -778,7 +780,8 @@
                     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
                 // Load PDF via proxy using /raw/ endpoint
-                var proxyPDFUrl = API_BASE + '/raw/' + contentsPath;
+                var decodedPath = decodeURIComponent(contentsPath);
+                var proxyPDFUrl = API_BASE + '/raw/' + encodeURIComponent(decodedPath).replace(/%2F/g, '/');
                 console.log('Loading PDF from:', proxyPDFUrl);
 
                 var loadingTask = pdfjsLib.getDocument({
