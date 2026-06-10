@@ -10,28 +10,32 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <style>
-        .page-container { box-shadow: 0 4px 16px rgba(0,0,0,0.6); position: relative; background: white; flex-shrink: 0; }
-        .page-container canvas { display: block; }
+        .page-wrapper { position: relative; display: inline-block; box-shadow: 0 4px 16px rgba(0,0,0,0.6); flex-shrink: 0; }
+        .page-wrapper canvas { display: block; }
+        .page-wrapper .ann-canvas { position: absolute; top: 0; left: 0; z-index: 10; }
+        .page-label { position: absolute; bottom: 8px; right: 12px; background: rgba(0,0,0,0.6); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; pointer-events: none; z-index: 20; }
         [data-tool].active { background-color: oklch(var(--p)) !important; color: oklch(var(--pc)) !important; font-weight: 600; }
-        .color-btn { transition: all 0.15s; }
+        .color-btn { transition: all 0.15s; cursor: pointer; }
         .color-btn:hover { transform: scale(1.15); }
         .color-btn.selected { border-color: white !important; box-shadow: 0 0 0 2px oklch(var(--p)); }
         #file-list > div { border-left: 3px solid transparent; transition: background 0.1s; }
         #file-list > div:hover { background-color: oklch(var(--b3) / 0.7); }
-        #file-list > div.bg-primary\/10 { border-left-color: oklch(var(--p)); }
+        #file-list > div.active-file { border-left-color: oklch(var(--p)); background-color: oklch(var(--p) / 0.1); }
         #browser-panel, #annotation-sidebar { transition: width 0.3s, min-width 0.3s; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
 
-    <nav class="navbar bg-base-200 border-b border-base-300 px-4 py-2 flex-shrink-0 z-10 min-h-0">
+    <!-- NAVBAR -->
+    <nav class="navbar bg-base-200 border-b border-base-300 px-4 py-2 flex-shrink-0 z-20 min-h-0">
         <div class="flex-1 flex items-center gap-3">
             <i data-lucide="file-text" class="w-5 h-5 text-primary"></i>
             <span class="text-primary font-bold text-lg">Del Medical PDF Review</span>
+            <span class="text-sm text-base-content/50 ml-2" id="current-pdf-name"></span>
         </div>
         <div class="flex-none flex gap-1">
-            <button class="btn btn-ghost btn-sm btn-square" id="toggle-browser" title="File browser"><i data-lucide="folder-tree" class="w-4 h-4"></i></button>
-            <button class="btn btn-ghost btn-sm btn-square" id="toggle-annotations" title="Comments"><i data-lucide="message-square-text" class="w-4 h-4"></i></button>
+            <button class="btn btn-ghost btn-sm btn-square" id="toggle-browser"><i data-lucide="folder-tree" class="w-4 h-4"></i></button>
+            <button class="btn btn-ghost btn-sm btn-square" id="toggle-annotations"><i data-lucide="message-square-text" class="w-4 h-4"></i></button>
         </div>
     </nav>
 
@@ -44,7 +48,7 @@
                 <h3 class="font-semibold text-sm flex-1">Documents</h3>
                 <button class="btn btn-ghost btn-xs" id="back-btn" disabled>⬅ Back</button>
             </div>
-            <div class="relative m-3">
+            <div class="p-3">
                 <input type="text" class="input input-bordered input-sm w-full" id="search-input" placeholder="🔍 Search files..." />
             </div>
             <div class="flex-1 overflow-y-auto px-1" id="file-list">
@@ -54,6 +58,7 @@
 
         <!-- PDF VIEWER -->
         <main class="flex-1 flex flex-col overflow-hidden">
+            <!-- TOOLBAR -->
             <div class="bg-base-200 border-b border-base-300 px-3 py-2 items-center gap-2 flex-shrink-0 flex-wrap hidden" id="annotation-toolbar">
                 <div class="join">
                     <button class="join-item btn btn-sm btn-ghost active" data-tool="select">🖱 Select</button>
@@ -63,17 +68,21 @@
                     <button class="join-item btn btn-sm btn-ghost" data-tool="comment">📝 Note</button>
                 </div>
                 <span class="text-xs text-base-content/50 ml-2">Color:</span>
-                <span class="w-6 h-6 rounded-full border-2 cursor-pointer color-btn selected" data-color="rgba(255,213,79,0.4)" style="background:#ffd54f;"></span>
-                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(88,166,255,0.4)" style="background:#58a6ff;"></span>
-                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(63,185,80,0.4)" style="background:#3fb950;"></span>
-                <span class="w-6 h-6 rounded-full border-2 border-transparent cursor-pointer color-btn" data-color="rgba(248,81,73,0.4)" style="background:#f85149;"></span>
+                <span class="color-btn w-6 h-6 rounded-full border-2 selected" data-color="rgba(255,213,79,0.5)" style="background:#ffd54f;"></span>
+                <span class="color-btn w-6 h-6 rounded-full border-2 border-transparent" data-color="rgba(88,166,255,0.5)" style="background:#58a6ff;"></span>
+                <span class="color-btn w-6 h-6 rounded-full border-2 border-transparent" data-color="rgba(63,185,80,0.5)" style="background:#3fb950;"></span>
+                <span class="color-btn w-6 h-6 rounded-full border-2 border-transparent" data-color="rgba(248,81,73,0.5)" style="background:#f85149;"></span>
                 <div class="flex-1"></div>
                 <button class="btn btn-ghost btn-sm" id="clear-page">🗑 Clear Page</button>
+                <button class="btn btn-ghost btn-sm" id="undo-btn">↩ Undo</button>
             </div>
+            
+            <!-- PDF SCROLL AREA -->
             <div class="flex-1 overflow-y-auto bg-[#525659] flex flex-col items-center p-5 gap-4" id="pdf-scroll-container">
                 <div class="flex-1 flex flex-col items-center justify-center text-white/40 text-center p-10" id="no-pdf-message">
                     <i data-lucide="file-search" class="w-16 h-16 mb-4 opacity-40"></i>
-                    <h3 class="text-xl font-semibold text-white/60">Select a PDF</h3>
+                    <h3 class="text-xl font-semibold text-white/60">Select a PDF to review</h3>
+                    <p class="mt-2 text-sm">Browse the file tree on the left to open a document.</p>
                 </div>
             </div>
         </main>
@@ -90,6 +99,7 @@
         </aside>
     </div>
 
+    <!-- TOAST -->
     <div class="toast toast-end toast-bottom z-50 hidden" id="toast">
         <div class="alert" id="toast-alert"><span id="toast-message"></span></div>
     </div>
@@ -107,10 +117,7 @@
     let fabricCanvases = {};
     let pageContainers = {};
     let currentTool = 'select';
-    let currentColor = 'rgba(255,213,79,0.4)';
-    let isDrawingRect = false;
-    let rectStart = null;
-    let tempRect = null;
+    let currentColor = 'rgba(255,213,79,0.5)';
 
     // ===== TOAST =====
     function toast(msg, type) {
@@ -122,16 +129,14 @@
         t._timer = setTimeout(() => t.classList.add('hidden'), 3000);
     }
 
-    function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
     function isDraft(n) { return /Rev_\d+[A-Za-z]/i.test(n); }
 
     // ===== API =====
     async function api(path, opts) {
-        opts = opts || {};
         const resp = await fetch(PROXY + path, {
-            headers: { 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' },
-            method: opts.method || 'GET',
-            body: opts.body || undefined,
+            headers: { 'Accept': 'application/vnd.github.v3+json' },
+            method: (opts && opts.method) || 'GET',
         });
         if (!resp.ok) throw new Error('API ' + resp.status);
         return resp.json();
@@ -149,13 +154,13 @@
             const pdfs = contents.filter(c => c.type === 'file' && c.name.toLowerCase().endsWith('.pdf')).sort((a,b) => a.name.localeCompare(b.name));
             let h = '';
             folders.forEach(f => {
-                h += `<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 border-l-3 border-transparent select-none" data-path="${f.path}">📁 <span class="truncate">${esc(f.name)}</span></div>`;
+                h += `<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 select-none" data-path="${esc(f.path)}">📁 <span class="truncate">${esc(f.name)}</span></div>`;
             });
             pdfs.forEach(p => {
                 const draft = isDraft(p.name);
-                const badge = draft ? '<span class="badge badge-warning badge-xs ml-auto">DRAFT</span>' : '<span class="badge badge-success badge-xs ml-auto">RELEASE</span>';
-                const active = currentPDFName === p.name ? ' bg-primary/10 border-l-primary' : '';
-                h += `<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 border-l-3 border-transparent${active} select-none" data-path="${p.path}" data-name="${esc(p.name)}">📄 <span class="truncate">${esc(p.name)}</span>${badge}</div>`;
+                const badge = draft ? '<span class="badge badge-warning badge-xs ml-auto flex-shrink-0">DRAFT</span>' : '<span class="badge badge-success badge-xs ml-auto flex-shrink-0">RELEASE</span>';
+                const active = currentPDFName === p.name ? ' active-file' : '';
+                h += `<div class="flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-base-300 select-none${active}" data-path="${esc(p.path)}" data-name="${esc(p.name)}">📄 <span class="truncate">${esc(p.name)}</span>${badge}</div>`;
             });
             fl.innerHTML = h;
             fl.querySelectorAll('[data-path]:not([data-name])').forEach(el => el.onclick = () => loadDir(el.dataset.path));
@@ -167,41 +172,47 @@
     $('back-btn').onclick = () => { if (currentPath) loadDir(currentPath.split('/').slice(0,-1).join('/') || ''); };
     $('search-input').oninput = e => {
         const q = e.target.value.toLowerCase();
-        $('file-list').querySelectorAll('[data-name]').forEach(el => {
+        $('file-list').querySelectorAll('[data-name],[data-path]').forEach(el => {
             el.style.display = (el.querySelector('.truncate')?.textContent||'').toLowerCase().includes(q) ? '' : 'none';
         });
     };
 
     function highlightFile(name) {
-        $('file-list').querySelectorAll('[data-name]').forEach(el => el.classList.remove('bg-primary/10','border-l-primary'));
-        const a = $('file-list').querySelector(`[data-name="${name}"]`);
-        if (a) a.classList.add('bg-primary/10','border-l-primary');
+        $('file-list').querySelectorAll('.active-file').forEach(el => el.classList.remove('active-file'));
+        const el = $('file-list').querySelector(`[data-name="${name}"]`);
+        if (el) el.classList.add('active-file');
     }
 
     // ===== TOOLS =====
     function setTool(tool) {
         currentTool = tool;
         document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
-        document.querySelector(`[data-tool="${tool}"]`)?.classList.add('active');
+        const btn = document.querySelector(`[data-tool="${tool}"]`);
+        if (btn) btn.classList.add('active');
         
-        // KEY FIX: Set pointer-events on annotation canvases based on tool
-        Object.entries(fabricCanvases).forEach(([pn, fc]) => {
-            if (!fc) return;
-            const canvasEl = fc.lowerCanvasEl;
+        Object.values(fabricCanvases).forEach(fc => {
+            if (!fc || !fc.lowerCanvasEl) return;
+            const el = fc.lowerCanvasEl;
+            
             if (tool === 'select') {
-                // In select mode, let clicks pass through to the PDF text
-                canvasEl.style.pointerEvents = 'none';
-                fc.selection = false;
+                el.style.pointerEvents = 'none';
                 fc.isDrawingMode = false;
+                fc.selection = false;
+            } else if (tool === 'draw') {
+                el.style.pointerEvents = 'auto';
+                fc.isDrawingMode = true;
+                fc.selection = false;
+                fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)');
+                fc.freeDrawingBrush.width = 3;
+            } else if (tool === 'highlight') {
+                el.style.pointerEvents = 'none'; // We use the DOM text selection
+                fc.isDrawingMode = false;
+                fc.selection = false;
             } else {
-                // In annotation modes, capture clicks
-                canvasEl.style.pointerEvents = 'auto';
-                fc.selection = (tool === 'highlight' || tool === 'comment');
-                fc.isDrawingMode = (tool === 'draw');
-                if (tool === 'draw') {
-                    fc.freeDrawingBrush.color = currentColor.replace(/[\d.]+\)$/, '1)');
-                    fc.freeDrawingBrush.width = 3;
-                }
+                // rectangle, comment
+                el.style.pointerEvents = 'auto';
+                fc.isDrawingMode = false;
+                fc.selection = false;
             }
             fc.renderAll();
         });
@@ -210,7 +221,8 @@
     function setColor(color) {
         currentColor = color;
         document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('selected'));
-        document.querySelector(`[data-color="${color}"]`)?.classList.add('selected');
+        const btn = document.querySelector(`[data-color="${color}"]`);
+        if (btn) btn.classList.add('selected');
         if (currentTool === 'draw') {
             Object.values(fabricCanvases).forEach(fc => {
                 if (fc) fc.freeDrawingBrush.color = color.replace(/[\d.]+\)$/, '1)');
@@ -221,34 +233,66 @@
     document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
     document.querySelectorAll('.color-btn').forEach(b => b.onclick = () => setColor(b.dataset.color));
 
-    // ===== FABRIC CANVAS =====
-    function createFabricCanvas(pageNum, canvasEl) {
-        const fc = new fabric.Canvas(canvasEl, {
-            selection: false,
-            isDrawingMode: false,
-            renderOnAddRemove: true,
-        });
-        // In select mode, pointer-events is none so Fabric won't get events anyway
-        canvasEl.style.pointerEvents = 'none';
-        
-        fc.on('object:modified', () => saveDrawings(pageNum));
-        fc.on('path:created', () => saveDrawings(pageNum));
-        fabricCanvases[pageNum] = fc;
-        return fc;
+    // ===== SIDEBAR =====
+    function renderSidebar() {
+        const list = $('annotation-list'), count = $('annotation-count');
+        if (!annotations.length) {
+            list.innerHTML = '<div class="text-center py-8 text-base-content/40 text-sm">No annotations yet.</div>';
+            count.textContent = '0';
+            return;
+        }
+        annotations.sort((a,b) => a.page - b.page);
+        count.textContent = annotations.length;
+        const labels = { highlight:'🖍 Highlight', quote:'💬 Quote', drawing:'✏️ Drawing', comment:'📝 Note', rectangle:'⬜ Rectangle' };
+        list.innerHTML = annotations.map((a,i) => {
+            let body = '';
+            if (a.comment) body += `<p class="text-sm">${esc(a.comment)}</p>`;
+            if (a.type === 'drawing' && !a.comment) body += '<p class="text-xs text-base-content/40">Drawing</p>';
+            return `<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary" onclick="scrollToPage(${a.page})">
+                <div class="card-body p-3">
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="badge badge-xs">${labels[a.type]||a.type}</span>
+                        <span>Page ${a.page}</span>
+                        <button class="btn btn-ghost btn-xs ml-auto text-error" onclick="event.stopPropagation();deleteAnnotation(${i})">✕</button>
+                    </div>
+                    <div class="mt-1">${body}</div>
+                    <div class="text-xs text-base-content/40 mt-1">${new Date(a.timestamp).toLocaleString()}</div>
+                </div></div>`;
+        }).join('');
     }
 
+    window.scrollToPage = function(pageNum) {
+        const c = pageContainers[pageNum];
+        if (c) { c.scrollIntoView({ behavior:'smooth', block:'center' }); }
+    };
+
+    window.deleteAnnotation = function(index) {
+        const ann = annotations[index];
+        if (ann && ann.page) {
+            // If it's a drawing on a fabric canvas, remove the objects
+            if ((ann.type === 'drawing' || ann.type === 'rectangle') && fabricCanvases[ann.page]) {
+                fabricCanvases[ann.page].clear();
+                fabricCanvases[ann.page].renderAll();
+            }
+        }
+        annotations.splice(index, 1);
+        renderSidebar();
+        toast('Annotation removed', 'success');
+    };
+
+    // ===== ANNOTATION FUNCTIONS =====
     function saveDrawings(pageNum) {
         const fc = fabricCanvases[pageNum];
         if (!fc) return;
         const objects = fc.getObjects().map(o => o.toJSON());
-        annotations = annotations.filter(a => !(a.type === 'drawing' && a.page === pageNum));
+        // Remove old drawing/rectangle annotations for this page
+        annotations = annotations.filter(a => !((a.type === 'drawing' || a.type === 'rectangle') && a.page === pageNum));
         if (objects.length > 0) {
             annotations.push({ type:'drawing', page:pageNum, objects, color:currentColor, timestamp:new Date().toISOString() });
         }
         renderSidebar();
     }
 
-    // ===== HIGHLIGHT (works on text selection) =====
     function handleHighlight(pageNum) {
         if (currentTool !== 'highlight') return;
         const sel = window.getSelection();
@@ -265,22 +309,23 @@
 
         for (let i = 0; i < rects.length; i++) {
             const r = rects[i];
-            fc.add(new fabric.Rect({
+            const rect = new fabric.Rect({
                 left: r.left - cr.left,
                 top: r.top - cr.top,
                 width: r.width,
                 height: r.height,
                 fill: currentColor,
-                selectable: true,
+                selectable: false,
+                evented: false,
                 opacity: 0.5,
-            }));
+            });
+            fc.add(rect);
         }
         fc.renderAll();
         saveDrawings(pageNum);
-        toast('Highlighted', 'success');
+        toast('Text highlighted!', 'success');
     }
 
-    // ===== STICKY NOTE (double-click on page) =====
     function handleSticky(e, pageNum) {
         if (currentTool !== 'comment') return;
         const container = pageContainers[pageNum];
@@ -293,52 +338,121 @@
         const fc = fabricCanvases[pageNum];
         if (!fc) return;
 
-        const circle = new fabric.Circle({ left:x-10, top:y-10, radius:10, fill:'#3fb950', opacity:0.7 });
-        const txt = new fabric.Text('📝', { left:x-10, top:y-12, fontSize:16 });
-        fc.add(new fabric.Group([circle, txt], { left:x-10, top:y-10 }));
+        // Add a visible sticky note marker
+        const rect = new fabric.Rect({
+            left: x - 20, top: y - 20,
+            width: 40, height: 40,
+            fill: '#fef08a',
+            stroke: '#ca8a04',
+            strokeWidth: 2,
+            rx: 4, ry: 4,
+        });
+        const txt = new fabric.Text('📝', {
+            left: x - 10, top: y - 12,
+            fontSize: 18,
+        });
+        fc.add(new fabric.Group([rect, txt], { left: x - 20, top: y - 20 }));
         fc.renderAll();
 
         annotations.push({ type:'comment', page:pageNum, comment, x:Math.round(x), y:Math.round(y), timestamp:new Date().toISOString() });
         renderSidebar();
-        toast('Note added', 'success');
+        toast('Note added!', 'success');
     }
 
-    // ===== RECTANGLE =====
+    // ===== RECTANGLE TOOL =====
+    let isDrawingRect = false, rectStart = null, tempRect = null;
+
     $('pdf-scroll-container').addEventListener('mousedown', function(e) {
         if (currentTool !== 'rectangle') return;
-        const target = e.target.closest('.page-container');
+        const target = e.target.closest('.page-wrapper');
         if (!target) return;
         const pageNum = parseInt(target.dataset.page);
         const fc = fabricCanvases[pageNum];
         if (!fc) return;
+        
         const ptr = fc.getPointer(e);
         isDrawingRect = true;
         rectStart = { x:ptr.x, y:ptr.y };
-        tempRect = new fabric.Rect({ left:ptr.x, top:ptr.y, width:0, height:0, fill:'transparent', stroke:currentColor.replace(/[\d.]+\)$/, '1)'), strokeWidth:2 });
+        
+        tempRect = new fabric.Rect({
+            left: ptr.x, top: ptr.y,
+            width: 0, height: 0,
+            fill: currentColor.replace(/[\d.]+\)$/, '0.3)'),
+            stroke: currentColor.replace(/[\d.]+\)$/, '1)'),
+            strokeWidth: 2,
+            strokeDashArray: [5, 5],
+        });
         fc.add(tempRect);
     });
 
     $('pdf-scroll-container').addEventListener('mousemove', function(e) {
         if (!isDrawingRect || !tempRect) return;
-        const target = e.target.closest('.page-container');
+        const target = e.target.closest('.page-wrapper');
         if (!target) return;
         const fc = fabricCanvases[parseInt(target.dataset.page)];
         if (!fc) return;
+        
         const ptr = fc.getPointer(e);
-        tempRect.set({ left: ptr.x > rectStart.x ? rectStart.x : ptr.x, top: ptr.y > rectStart.y ? rectStart.y : ptr.y, width:Math.abs(ptr.x-rectStart.x), height:Math.abs(ptr.y-rectStart.y) });
+        tempRect.set({
+            left: Math.min(ptr.x, rectStart.x),
+            top: Math.min(ptr.y, rectStart.y),
+            width: Math.abs(ptr.x - rectStart.x),
+            height: Math.abs(ptr.y - rectStart.y),
+        });
         fc.renderAll();
     });
 
     $('pdf-scroll-container').addEventListener('mouseup', function(e) {
         if (!isDrawingRect) return;
         isDrawingRect = false;
+        
         if (tempRect && tempRect.width > 5 && tempRect.height > 5) {
-            tempRect.set({ selectable:true });
-            const target = e.target.closest('.page-container');
-            if (target) saveDrawings(parseInt(target.dataset.page));
-        } else if (tempRect) { try { tempRect.canvas.remove(tempRect); } catch(er){} }
-        tempRect = null; rectStart = null;
+            // Finalize: remove dash, add solid look
+            tempRect.set({ strokeDashArray: null, fill: currentColor.replace(/[\d.]+\)$/, '0.3)') });
+            const target = e.target.closest('.page-wrapper');
+            if (target) {
+                const pageNum = parseInt(target.dataset.page);
+                annotations.push({
+                    type: 'rectangle',
+                    page: pageNum,
+                    comment: '',
+                    x: Math.round(tempRect.left),
+                    y: Math.round(tempRect.top),
+                    w: Math.round(tempRect.width),
+                    h: Math.round(tempRect.height),
+                    color: currentColor,
+                    timestamp: new Date().toISOString(),
+                });
+                saveDrawings(pageNum);
+                toast('Rectangle added!', 'success');
+            }
+        } else if (tempRect) {
+            try { tempRect.canvas.remove(tempRect); } catch(er) {}
+        }
+        tempRect = null;
+        rectStart = null;
     });
+
+    // ===== UNDO =====
+    $('undo-btn').onclick = () => {
+        // Find the most visible page
+        const cr = $('pdf-scroll-container').getBoundingClientRect();
+        let best = null, bestO = 0;
+        Object.entries(pageContainers).forEach(([pn, el]) => {
+            const r = el.getBoundingClientRect();
+            const o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top));
+            if (o > bestO) { bestO = o; best = parseInt(pn); }
+        });
+        if (!best) return;
+        const fc = fabricCanvases[best];
+        if (!fc) return;
+        const objs = fc.getObjects();
+        if (objs.length === 0) return;
+        fc.remove(objs[objs.length - 1]);
+        fc.renderAll();
+        saveDrawings(best);
+        toast('Undo', 'success');
+    };
 
     // ===== CLEAR PAGE =====
     $('clear-page').onclick = () => {
@@ -358,31 +472,6 @@
         toast('Cleared page ' + best, 'success');
     };
 
-    // ===== SIDEBAR =====
-    function renderSidebar() {
-        const list = $('annotation-list'), count = $('annotation-count');
-        if (!annotations.length) {
-            list.innerHTML = '<div class="text-center py-8 text-base-content/40 text-sm">No annotations yet.</div>';
-            count.textContent = '0';
-            return;
-        }
-        annotations.sort((a,b) => a.page - b.page);
-        count.textContent = annotations.length;
-        list.innerHTML = annotations.map(a => {
-            const labels = { highlight:'🖍 Highlight', quote:'💬 Quote', drawing:'✏️ Drawing', comment:'📝 Note', rectangle:'⬜ Rectangle' };
-            let body = '';
-            if (a.comment) body += `<p class="text-sm">${esc(a.comment)}</p>`;
-            if (a.type === 'drawing' && !a.comment) body += '<p class="text-xs text-base-content/40">Drawing</p>';
-            return `<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary" data-goto="${a.page}">
-                <div class="card-body p-3"><div class="flex items-center gap-2 text-xs"><span class="badge badge-xs">${labels[a.type]||a.type}</span><span>Page ${a.page}</span></div>
-                <div class="mt-1">${body}</div><div class="text-xs text-base-content/40 mt-1">${new Date(a.timestamp).toLocaleString()}</div></div></div>`;
-        }).join('');
-        list.querySelectorAll('[data-goto]').forEach(card => card.onclick = () => {
-            const c = pageContainers[parseInt(card.dataset.goto)];
-            if (c) { c.scrollIntoView({ behavior:'smooth', block:'center' }); }
-        });
-    }
-
     // ===== PDF LOADING =====
     async function loadPDF(contentsPath, name) {
         // Cleanup
@@ -390,91 +479,113 @@
         fabricCanvases = {};
         pageContainers = {};
         annotations = [];
+        
         currentPDFName = name;
+        $('current-pdf-name').textContent = '— ' + name;
         highlightFile(name);
         $('no-pdf-message').style.display = 'none';
         $('annotation-toolbar').style.display = 'flex';
-        const scroll = $('pdf-scroll-container');
-        scroll.innerHTML = '<div class="text-center py-10 text-white/50">Loading PDF...</div>';
+        $('pdf-scroll-container').innerHTML = '<div class="text-center py-10 text-white/50">Loading PDF...</div>';
         renderSidebar();
 
         try {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            
             const resp = await fetch(PROXY + '/raw/master/' + contentsPath);
             if (!resp.ok) throw new Error('HTTP ' + resp.status);
             const data = await resp.arrayBuffer();
+            
             const header = String.fromCharCode.apply(null, new Uint8Array(data.slice(0,5)));
-            if (!header.startsWith('%PDF')) throw new Error('Not a PDF');
+            if (!header.startsWith('%PDF')) throw new Error('Not a valid PDF');
 
             const pdfDoc = await pdfjsLib.getDocument({ data }).promise;
-            scroll.innerHTML = '';
+            $('pdf-scroll-container').innerHTML = '';
 
             for (let i = 1; i <= pdfDoc.numPages; i++) {
                 const page = await pdfDoc.getPage(i);
                 const vp = page.getViewport({ scale: 1.5 });
 
-                const pc = document.createElement('div');
-                pc.className = 'page-container';
-                pc.style.width = vp.width + 'px';
-                pc.style.height = vp.height + 'px';
-                pc.dataset.page = i;
-                pageContainers[i] = pc;
+                // Create wrapper
+                const wrapper = document.createElement('div');
+                wrapper.className = 'page-wrapper';
+                wrapper.style.width = vp.width + 'px';
+                wrapper.style.height = vp.height + 'px';
+                wrapper.dataset.page = i;
+                pageContainers[i] = wrapper;
 
-                // PDF canvas
+                // PDF canvas (bottom layer)
                 const pdfCanvas = document.createElement('canvas');
                 pdfCanvas.width = vp.width;
                 pdfCanvas.height = vp.height;
-                pdfCanvas.style.display = 'block';
                 await page.render({ canvasContext: pdfCanvas.getContext('2d'), viewport: vp }).promise;
-                pc.appendChild(pdfCanvas);
+                wrapper.appendChild(pdfCanvas);
 
-                // Annotation canvas (on top of PDF)
+                // Annotation canvas (top layer — must be AFTER pdf canvas in DOM)
                 const annCanvas = document.createElement('canvas');
+                annCanvas.className = 'ann-canvas';
                 annCanvas.width = vp.width;
                 annCanvas.height = vp.height;
-                annCanvas.style.cssText = 'position:absolute;top:0;left:0;width:'+vp.width+'px;height:'+vp.height+'px;';
-                pc.appendChild(annCanvas);
+                wrapper.appendChild(annCanvas);
 
-                createFabricCanvas(i, annCanvas);
+                // Create Fabric canvas
+                const fc = new fabric.Canvas(annCanvas, {
+                    selection: false,
+                    isDrawingMode: false,
+                    renderOnAddRemove: true,
+                });
+                fc.lowerCanvasEl.style.pointerEvents = 'none'; // Start in select mode
+                fc.on('object:modified', () => saveDrawings(i));
+                fc.on('path:created', () => saveDrawings(i));
+                fabricCanvases[i] = fc;
 
-                // Events on the page container (not the canvases)
-                pc.addEventListener('mouseup', () => handleHighlight(i));
-                pc.addEventListener('dblclick', (e) => handleSticky(e, i));
+                // Events on wrapper
+                wrapper.addEventListener('mouseup', () => handleHighlight(i));
+                wrapper.addEventListener('dblclick', (e) => handleSticky(e, i));
 
                 // Page label
                 const label = document.createElement('div');
-                label.style.cssText = 'position:absolute;bottom:8px;right:12px;background:rgba(0,0,0,0.6);color:white;padding:2px 8px;border-radius:4px;font-size:0.7rem;pointer-events:none;';
+                label.className = 'page-label';
                 label.textContent = 'Page ' + i;
-                pc.appendChild(label);
+                wrapper.appendChild(label);
 
-                scroll.appendChild(pc);
+                $('pdf-scroll-container').appendChild(wrapper);
             }
 
-            // Reset to select mode
             setTool('select');
-            toast('Loaded ' + pdfDoc.numPages + ' pages', 'success');
+            toast('Loaded ' + pdfDoc.numPages + ' pages. Try the tools!', 'success');
+            
         } catch (err) {
-            scroll.innerHTML = `<div class="text-center py-10 text-white"><p class="text-error">${esc(err.message)}</p></div>`;
+            console.error(err);
+            $('pdf-scroll-container').innerHTML = `<div class="text-center py-10 text-white"><p class="text-error text-lg">${esc(err.message)}</p></div>`;
             toast('Error: ' + err.message, 'error');
         }
     }
 
     // ===== PANELS =====
-    $('toggle-browser').onclick = () => { const p=$('browser-panel'); p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); };
-    $('toggle-annotations').onclick = () => { const p=$('annotation-sidebar'); p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); };
+    $('toggle-browser').onclick = () => { 
+        const p = $('browser-panel'); 
+        p.classList.toggle('!w-0'); 
+        p.classList.toggle('!min-w-0'); 
+    };
+    $('toggle-annotations').onclick = () => { 
+        const p = $('annotation-sidebar'); 
+        p.classList.toggle('!w-0'); 
+        p.classList.toggle('!min-w-0'); 
+    };
 
     // ===== KEYBOARD =====
     document.addEventListener('keydown', e => {
         if (document.activeElement !== document.body) return;
-        if (e.key === 'Escape') setTool('select');
-        if (e.key === 'h') setTool('highlight');
-        if (e.key === 'd') setTool('draw');
-        if (e.key === 'r') setTool('rectangle');
-        if (e.key === 'n') setTool('comment');
+        const key = e.key.toLowerCase();
+        if (key === 'escape') setTool('select');
+        if (key === 'h') setTool('highlight');
+        if (key === 'd') setTool('draw');
+        if (key === 'r') setTool('rectangle');
+        if (key === 'n') setTool('comment');
     });
 
     // ===== START =====
-    loadDir('').then(() => toast('Connected', 'success')).catch(err => toast(err.message, 'error'));
+    loadDir('').then(() => toast('Connected to DelMedicalRelease', 'success')).catch(err => toast(err.message, 'error'));
     </script>
 </body>
 </html>
