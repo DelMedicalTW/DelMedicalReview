@@ -1,7 +1,10 @@
 // ============================================================
 // ANNOTATION TOOLS (Fabric.js)
 // ============================================================
-const Annotations = (function() {
+var Annotations = (function() {
+    if (typeof Annotations !== 'undefined' && Annotations.setToolMode) {
+        return Annotations;
+    }
     let currentTool = 'select';
     let currentColor = 'rgba(255,213,79,0.4)';
     let annotations = [];
