@@ -2,10 +2,6 @@
 // GITHUB API (via Cloudflare Proxy)
 // ============================================================
 var API = (function() {
-    if (typeof API !== 'undefined' && API.fetchContents) {
-        return API;
-    }
-
     const BASE = CONFIG.PROXY_URL;
 
     async function githubFetch(url, options) {
@@ -20,9 +16,7 @@ var API = (function() {
             proxyUrl = BASE + url;
         }
 
-        const fetchOptions = {
-            headers: { 'Accept': 'application/vnd.github.v3+json' },
-        };
+        const fetchOptions = { headers: { 'Accept': 'application/vnd.github.v3+json' } };
         if (options.method) fetchOptions.method = options.method;
         if (options.body) {
             fetchOptions.body = options.body;
@@ -39,16 +33,12 @@ var API = (function() {
     }
 
     return {
-        fetchContents: function(path) {
-            return githubFetch('/contents/' + path);
-        },
-
+        fetchContents: function(path) { return githubFetch('/contents/' + path); },
+        
         fetchPDF: async function(contentsPath) {
             const proxyPDFUrl = BASE + '/raw/master/' + contentsPath;
             const response = await fetch(proxyPDFUrl);
-            if (!response.ok) {
-                throw new Error('HTTP ' + response.status + ' - Failed to load PDF');
-            }
+            if (!response.ok) throw new Error('HTTP ' + response.status + ' - Failed to load PDF');
             return response.arrayBuffer();
         },
 
@@ -57,8 +47,7 @@ var API = (function() {
             const allIssues = [];
             let page = 1;
             while (true) {
-                const url = '/issues?labels=' + label + '&state=all&per_page=100&page=' + page;
-                const batch = await githubFetch(url);
+                const batch = await githubFetch('/issues?labels=' + label + '&state=all&per_page=100&page=' + page);
                 if (!batch.length) break;
                 allIssues.push(...batch);
                 page++;
