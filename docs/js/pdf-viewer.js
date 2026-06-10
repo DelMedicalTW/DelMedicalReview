@@ -85,4 +85,39 @@ const PDFViewer = (function() {
         const pageContainer = document.createElement('div');
         pageContainer.className = 'page-container relative shadow-lg bg-white flex-shrink-0';
         pageContainer.style.width = viewport.width + 'px';
-        page
+        pageContainer.style.height = viewport.height + 'px';
+        pageContainer.dataset.page = pageNum;
+
+        // PDF canvas
+        const pdfCanvas = document.createElement('canvas');
+        pdfCanvas.width = viewport.width;
+        pdfCanvas.height = viewport.height;
+        pdfCanvas.className = 'block';
+        const ctx = pdfCanvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        pageContainer.appendChild(pdfCanvas);
+
+        // Annotation layer
+        const annCanvas = document.createElement('canvas');
+        annCanvas.width = viewport.width;
+        annCanvas.height = viewport.height;
+        annCanvas.className = 'annotation-layer absolute top-0 left-0';
+        annCanvas.style.width = viewport.width + 'px';
+        annCanvas.style.height = viewport.height + 'px';
+        pageContainer.appendChild(annCanvas);
+
+        // Fabric canvas
+        Annotations.createFabricCanvas(pageNum, annCanvas);
+        Annotations.registerPageContainer(pageNum, pageContainer);
+
+        // Page label
+        const label = document.createElement('div');
+        label.className = 'absolute bottom-2 right-3 bg-black/60 text-white px-2 py-0.5 rounded text-xs pointer-events-none';
+        label.textContent = 'Page ' + pageNum;
+        pageContainer.appendChild(label);
+
+        pdfScrollContainer.appendChild(pageContainer);
+    }
+
+    return { loadPDF, getPDFDoc: () => pdfDoc };
+})();
