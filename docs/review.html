@@ -781,13 +781,16 @@
                 pdfjsLib.GlobalWorkerOptions.workerSrc =
                     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-                // Load PDF via proxy
-                var proxyPDFUrl = API_BASE + '/contents/' + contentsPath;
+                // Load PDF via proxy using /raw/ endpoint
+                var proxyPDFUrl = API_BASE + '/raw/' + contentsPath;
+                console.log('Loading PDF from:', proxyPDFUrl);
+
                 var loadingTask = pdfjsLib.getDocument({
                     url: proxyPDFUrl,
                     withCredentials: false,
+                    disableRange: false,
+                    disableStream: false,
                 });
-                pdfDoc = await loadingTask.promise;
 
                 document.getElementById('pdf-scroll-container').innerHTML = '';
                 for (var i = 1; i <= pdfDoc.numPages; i++) {
