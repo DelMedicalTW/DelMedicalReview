@@ -10,99 +10,50 @@
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
-    <!-- jsPDF for export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
     <style>
-        .page-wrapper {
-            position: relative; display: block;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.6);
-            flex-shrink: 0; margin: 0 auto; background: white;
-        }
+        .page-wrapper { position: relative; display: block; box-shadow: 0 4px 16px rgba(0,0,0,0.6); flex-shrink: 0; margin: 0 auto; background: white; }
         .page-wrapper canvas { display: block; }
-        .page-wrapper .ann-canvas { position: absolute; top: 0; left: 0; z-index: 10; }
-        .textLayer {
-            position: absolute; top: 0; left: 0; overflow: hidden; z-index: 5;
-            opacity: 1; line-height: 1.0;
-        }
-        .textLayer span {
-            color: transparent; position: absolute; white-space: pre;
-            cursor: text; transform-origin: 0% 0%;
-        }
+        .page-wrapper .ann-canvas { position: absolute; top: 0; left: 0; z-index: 10; pointer-events: none; }
+        .textLayer { position: absolute; top: 0; left: 0; overflow: hidden; z-index: 5; opacity: 1; line-height: 1.0; }
+        .textLayer span { color: transparent; position: absolute; white-space: pre; cursor: text; transform-origin: 0% 0%; }
         .textLayer ::selection { background: rgba(0,120,255,0.3); }
-        .page-label {
-            position: absolute; bottom: 8px; right: 12px;
-            background: rgba(0,0,0,0.6); color: white; padding: 2px 8px;
-            border-radius: 4px; font-size: 0.7rem; pointer-events: none; z-index: 20;
-        }
-        [data-tool].tool-active {
-            background-color: oklch(var(--p)) !important;
-            color: oklch(var(--pc)) !important;
-        }
+        .page-label { position: absolute; bottom: 8px; right: 12px; background: rgba(0,0,0,0.6); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; pointer-events: none; z-index: 20; }
+        [data-tool].tool-active { background-color: oklch(var(--p)) !important; color: oklch(var(--pc)) !important; font-weight: 600; }
         .color-btn { transition: all 0.15s; }
         .color-btn:hover { transform: scale(1.2); }
         .color-btn.selected { border-color: white !important; box-shadow: 0 0 0 2px oklch(var(--p)); }
-        #file-list .file-row {
-            border-left: 3px solid transparent; transition: background 0.1s;
-        }
+        #file-list .file-row { border-left: 3px solid transparent; transition: background 0.1s; }
         #file-list .file-row:hover { background-color: oklch(var(--b3) / 0.7); }
-        #file-list .file-row.active-file {
-            border-left-color: oklch(var(--p));
-            background-color: oklch(var(--p) / 0.1);
-        }
-        #browser-panel, #annotation-sidebar {
-            transition: width 0.3s ease, min-width 0.3s ease;
-        }
-        #file-list::-webkit-scrollbar,
-        #pdf-scroll-container::-webkit-scrollbar,
-        #annotation-list::-webkit-scrollbar { width: 6px; }
-        #file-list::-webkit-scrollbar-thumb,
-        #pdf-scroll-container::-webkit-scrollbar-thumb,
-        #annotation-list::-webkit-scrollbar-thumb {
-            background: oklch(var(--b3)); border-radius: 3px;
-        }
-        .annotation-highlight { animation: highlightPulse 1s ease; }
-        @keyframes highlightPulse {
-            0% { box-shadow: 0 0 0 4px oklch(var(--p)); }
-            100% { box-shadow: 0 4px 16px rgba(0,0,0,0.6); }
-        }
-        .badge-lg { font-size: 0.85rem; padding: 0.25rem 0.75rem; }
+        #file-list .file-row.active-file { border-left-color: oklch(var(--p)); background-color: oklch(var(--p) / 0.1); }
+        #browser-panel, #annotation-sidebar { transition: width 0.3s ease, min-width 0.3s ease; }
+        #file-list::-webkit-scrollbar, #pdf-scroll-container::-webkit-scrollbar, #annotation-list::-webkit-scrollbar { width: 6px; }
+        #file-list::-webkit-scrollbar-thumb, #pdf-scroll-container::-webkit-scrollbar-thumb, #annotation-list::-webkit-scrollbar-thumb { background: oklch(var(--b3)); border-radius: 3px; }
+        .annotation-layer-active { pointer-events: auto !important; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
 
-    <!-- NAVBAR -->
     <nav class="navbar bg-base-200 border-b border-base-300 px-4 py-2 flex-shrink-0 z-20 min-h-0 gap-2">
         <div class="flex-1 flex items-center gap-3 min-w-0">
             <i data-lucide="file-text" class="w-5 h-5 text-primary flex-shrink-0"></i>
             <span class="text-primary font-bold text-lg hidden sm:inline">Del Medical</span>
-            <span class="text-base-content/50 hidden sm:inline">|</span>
             <span class="text-sm text-base-content/50 truncate hidden md:inline" id="current-pdf-name">PDF Review Portal</span>
         </div>
         <div class="flex-none flex items-center gap-1">
-            <div class="tooltip tooltip-bottom" data-tip="Sync status">
-                <span class="badge badge-sm gap-1" id="sync-badge">
-                    <i data-lucide="refresh-cw" class="w-3 h-3"></i> <span id="sync-label">GitHub</span>
-                </span>
+            <div class="tooltip tooltip-bottom" data-tip="Sync with GitHub Issues">
+                <span class="badge badge-sm gap-1" id="sync-badge"><i data-lucide="refresh-cw" class="w-3 h-3"></i> <span id="sync-label">GitHub</span></span>
             </div>
-            <button class="btn btn-ghost btn-sm" id="export-btn" title="Export annotations">
-                <i data-lucide="download" class="w-4 h-4"></i>
-            </button>
-            <button class="btn btn-ghost btn-sm" id="sync-btn" title="Sync to GitHub">
-                <i data-lucide="upload" class="w-4 h-4"></i>
-            </button>
+            <button class="btn btn-ghost btn-sm" id="refresh-btn" title="Refresh from GitHub"><i data-lucide="download" class="w-4 h-4"></i></button>
+            <button class="btn btn-ghost btn-sm" id="sync-btn" title="Push to GitHub"><i data-lucide="upload" class="w-4 h-4"></i></button>
+            <button class="btn btn-ghost btn-sm" id="export-btn" title="Export"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i></button>
             <div class="dropdown dropdown-end">
-                <button class="btn btn-ghost btn-sm btn-square" tabindex="0" title="Theme">
-                    <i data-lucide="palette" class="w-4 h-4"></i>
-                </button>
+                <button class="btn btn-ghost btn-sm btn-square" tabindex="0"><i data-lucide="palette" class="w-4 h-4"></i></button>
                 <ul tabindex="0" class="dropdown-content z-30 menu p-2 shadow-lg bg-base-200 rounded-box w-48 mt-2">
-                    <li class="menu-title"><span>Themes</span></li>
                     <li><a href="#" data-theme-switch="auto"><i data-lucide="monitor" class="w-4 h-4"></i> Auto</a></li>
                     <li><a href="#" data-theme-switch="dark"><i data-lucide="moon" class="w-4 h-4"></i> Dark</a></li>
                     <li><a href="#" data-theme-switch="light"><i data-lucide="sun" class="w-4 h-4"></i> Light</a></li>
-                    <li><a href="#" data-theme-switch="cupcake"><i data-lucide="cake" class="w-4 h-4"></i> Cupcake</a></li>
-                    <li><a href="#" data-theme-switch="cyberpunk"><i data-lucide="zap" class="w-4 h-4"></i> Cyberpunk</a></li>
-                    <li><a href="#" data-theme-switch="forest"><i data-lucide="trees" class="w-4 h-4"></i> Forest</a></li>
                 </ul>
             </div>
             <button class="btn btn-ghost btn-sm btn-square" id="toggle-browser"><i data-lucide="folder-tree" class="w-4 h-4"></i></button>
@@ -111,162 +62,64 @@
     </nav>
 
     <div class="flex flex-1 overflow-hidden">
-        
-        <!-- FILE BROWSER -->
         <aside class="w-80 min-w-[320px] bg-base-200 border-r border-base-300 flex flex-col overflow-hidden" id="browser-panel">
             <div class="p-3 border-b border-base-300 flex items-center gap-2 flex-shrink-0">
                 <i data-lucide="folder-open" class="w-4 h-4 text-warning"></i>
                 <h3 class="font-semibold text-sm flex-1">Documents</h3>
                 <button class="btn btn-ghost btn-xs" id="back-btn" disabled><i data-lucide="arrow-left" class="w-3 h-3"></i> Back</button>
             </div>
-            <div class="p-3">
-                <label class="input input-bordered input-sm flex items-center gap-2">
-                    <i data-lucide="search" class="w-4 h-4 text-base-content/40"></i>
-                    <input type="text" class="grow" id="search-input" placeholder="Search files..." />
-                </label>
-            </div>
-            <div class="flex-1 overflow-y-auto" id="file-list">
-                <div class="text-center py-8 text-base-content/50 text-sm"><span class="loading loading-spinner loading-sm"></span> Loading...</div>
-            </div>
+            <div class="p-3"><input type="text" class="input input-bordered input-sm w-full" id="search-input" placeholder="Search..." /></div>
+            <div class="flex-1 overflow-y-auto" id="file-list"><div class="text-center py-8 text-base-content/50 text-sm"><span class="loading loading-spinner loading-sm"></span> Loading...</div></div>
         </aside>
 
-        <!-- PDF VIEWER -->
         <main class="flex-1 flex flex-col overflow-hidden">
             <div class="bg-base-200 border-b border-base-300 px-3 py-2 flex-shrink-0 hidden" id="annotation-toolbar">
-                <div class="flex items-center gap-2 flex-wrap w-full">
-                    <div class="join flex-shrink-0">
-                        <button class="join-item btn btn-sm tool-active" data-tool="select"><i data-lucide="mouse-pointer-2" class="w-4 h-4"></i><span class="hidden sm:inline ml-1">Select</span></button>
-                        <button class="join-item btn btn-sm" data-tool="highlight"><i data-lucide="highlighter" class="w-4 h-4"></i><span class="hidden sm:inline ml-1">Highlight</span></button>
-                        <button class="join-item btn btn-sm" data-tool="draw"><i data-lucide="pen" class="w-4 h-4"></i><span class="hidden sm:inline ml-1">Draw</span></button>
-                        <button class="join-item btn btn-sm" data-tool="rectangle"><i data-lucide="square-dashed" class="w-4 h-4"></i><span class="hidden sm:inline ml-1">Rect</span></button>
-                        <button class="join-item btn btn-sm" data-tool="comment"><i data-lucide="sticky-note" class="w-4 h-4"></i><span class="hidden sm:inline ml-1">Note</span></button>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <div class="join">
+                        <button class="join-item btn btn-sm tool-active" data-tool="select"><i data-lucide="mouse-pointer-2" class="w-4 h-4"></i> Select</button>
+                        <button class="join-item btn btn-sm" data-tool="highlight"><i data-lucide="highlighter" class="w-4 h-4"></i> Highlight</button>
+                        <button class="join-item btn btn-sm" data-tool="draw"><i data-lucide="pen" class="w-4 h-4"></i> Draw</button>
+                        <button class="join-item btn btn-sm" data-tool="rectangle"><i data-lucide="square-dashed" class="w-4 h-4"></i> Rect</button>
+                        <button class="join-item btn btn-sm" data-tool="comment"><i data-lucide="sticky-note" class="w-4 h-4"></i> Note</button>
                     </div>
-                    <div class="divider divider-horizontal mx-1"></div>
-                    <span class="text-xs text-base-content/50 flex-shrink-0">Color:</span>
-                    <div class="flex gap-1">
-                        <span class="color-btn w-6 h-6 rounded-full border-2 selected flex-shrink-0" data-color="rgba(255,213,79,0.45)" style="background:#ffd54f;" title="Yellow"></span>
-                        <span class="color-btn w-6 h-6 rounded-full border-2 border-transparent flex-shrink-0" data-color="rgba(88,166,255,0.45)" style="background:#58a6ff;" title="Blue"></span>
-                        <span class="color-btn w-6 h-6 rounded-full border-2 border-transparent flex-shrink-0" data-color="rgba(63,185,80,0.45)" style="background:#3fb950;" title="Green"></span>
-                        <span class="color-btn w-6 h-6 rounded-full border-2 border-transparent flex-shrink-0" data-color="rgba(248,81,73,0.45)" style="background:#f85149;" title="Red"></span>
-                    </div>
+                    <div class="flex gap-1"><span class="color-btn w-6 h-6 rounded-full border-2 selected" data-color="rgba(255,213,79,0.45)" style="background:#ffd54f;"></span><span class="color-btn w-6 h-6 rounded-full border-2 border-transparent" data-color="rgba(88,166,255,0.45)" style="background:#58a6ff;"></span><span class="color-btn w-6 h-6 rounded-full border-2 border-transparent" data-color="rgba(63,185,80,0.45)" style="background:#3fb950;"></span><span class="color-btn w-6 h-6 rounded-full border-2 border-transparent" data-color="rgba(248,81,73,0.45)" style="background:#f85149;"></span></div>
                     <div class="flex-1"></div>
                     <button class="btn btn-ghost btn-sm" id="undo-btn"><i data-lucide="undo-2" class="w-4 h-4"></i></button>
                     <button class="btn btn-ghost btn-sm text-error" id="clear-page"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                 </div>
             </div>
             <div class="flex-1 overflow-y-auto bg-[#525659] flex flex-col items-center py-5 gap-4" id="pdf-scroll-container">
-                <div class="flex-1 flex flex-col items-center justify-center text-white/40 text-center p-10" id="no-pdf-message">
-                    <i data-lucide="file-search" class="w-20 h-20 mb-4 opacity-30"></i>
-                    <h3 class="text-2xl font-semibold text-white/50">Select a PDF to review</h3>
-                    <p class="mt-2 text-sm">Browse the file tree on the left</p>
-                </div>
+                <div class="flex-1 flex flex-col items-center justify-center text-white/40 text-center p-10" id="no-pdf-message"><i data-lucide="file-search" class="w-20 h-20 mb-4 opacity-30"></i><h3 class="text-2xl font-semibold text-white/50">Select a PDF</h3></div>
             </div>
         </main>
 
-        <!-- ANNOTATION SIDEBAR -->
         <aside class="w-[420px] min-w-[420px] bg-base-200 border-l border-base-300 flex flex-col overflow-hidden" id="annotation-sidebar">
             <div class="p-3 border-b border-base-300 flex items-center justify-between flex-shrink-0">
-                <h3 class="font-semibold text-sm flex items-center gap-2"><i data-lucide="message-square-text" class="w-4 h-4 text-info"></i> Annotations</h3>
+                <h3 class="font-semibold text-sm"><i data-lucide="message-square-text" class="w-4 h-4 inline text-info"></i> Annotations</h3>
                 <span class="badge badge-sm" id="annotation-count">0</span>
             </div>
-            <div class="p-3 border-b border-base-300 flex-shrink-0 space-y-2">
-                <label class="form-control w-full">
-                    <div class="label py-0 pb-1"><span class="label-text text-xs flex items-center gap-1"><i data-lucide="user" class="w-3 h-3"></i> Reviewer</span></div>
-                    <input type="text" class="input input-bordered input-sm w-full" id="reviewer-name" placeholder="Enter your name..." />
-                </label>
-                <!-- Filter bar -->
-                <div class="flex gap-2 flex-wrap">
-                    <select class="select select-bordered select-xs flex-1 min-w-[80px]" id="filter-type">
-                        <option value="all">All Types</option>
-                        <option value="highlight">Highlights</option>
-                        <option value="drawing">Drawings</option>
-                        <option value="rectangle">Rectangles</option>
-                        <option value="comment">Notes</option>
-                    </select>
-                    <select class="select select-bordered select-xs flex-1 min-w-[80px]" id="filter-status">
-                        <option value="all">All Status</option>
-                        <option value="open">Open</option>
-                        <option value="in-review">In Review</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="verified">Verified</option>
-                    </select>
-                    <select class="select select-bordered select-xs flex-1 min-w-[80px]" id="filter-sort">
-                        <option value="page-asc">Page ↑</option>
-                        <option value="page-desc">Page ↓</option>
-                        <option value="newest">Newest</option>
-                        <option value="oldest">Oldest</option>
-                    </select>
+            <div class="p-2 border-b border-base-300 flex-shrink-0 space-y-1">
+                <input type="text" class="input input-bordered input-sm w-full" id="reviewer-name" placeholder="Your name..." />
+                <div class="flex gap-1">
+                    <select class="select select-bordered select-xs flex-1" id="filter-type"><option value="all">All</option><option value="highlight">Highlights</option><option value="drawing">Drawings</option><option value="rectangle">Rects</option><option value="comment">Notes</option></select>
+                    <select class="select select-bordered select-xs flex-1" id="filter-status"><option value="all">All</option><option value="open">Open</option><option value="in-review">In Review</option><option value="resolved">Resolved</option></select>
+                    <select class="select select-bordered select-xs flex-1" id="filter-sort"><option value="page-asc">Page ↑</option><option value="page-desc">Page ↓</option><option value="newest">Newest</option></select>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto p-3 flex flex-col gap-2" id="annotation-list">
-                <div class="text-center py-8 text-base-content/40 text-sm"><i data-lucide="inbox" class="w-10 h-10 mx-auto mb-2 opacity-40"></i><p>No annotations yet</p></div>
-            </div>
-            <div class="p-2 border-t border-base-300 flex-shrink-0">
-                <div class="flex items-center justify-between text-xs text-base-content/40">
-                    <span class="flex items-center gap-1"><i data-lucide="hard-drive" class="w-3 h-3"></i> Local</span>
-                    <span class="flex items-center gap-1"><i data-lucide="globe" class="w-3 h-3"></i> Issues</span>
-                </div>
-            </div>
+            <div class="flex-1 overflow-y-auto p-2 flex flex-col gap-1" id="annotation-list"><div class="text-center py-8 text-base-content/40 text-sm">No annotations</div></div>
+            <div class="p-2 border-t border-base-300 text-xs text-base-content/40 text-center">Annotations sync to GitHub Issues</div>
         </aside>
     </div>
 
-    <!-- TOAST -->
-    <div class="toast toast-end toast-bottom z-50 hidden" id="toast">
-        <div class="alert" id="toast-alert">
-            <i data-lucide="check-circle" class="w-4 h-4 hidden" id="toast-icon-ok"></i>
-            <i data-lucide="alert-circle" class="w-4 h-4 hidden" id="toast-icon-err"></i>
-            <span id="toast-message"></span>
-        </div>
-    </div>
+    <div class="toast toast-end toast-bottom z-50 hidden" id="toast"><div class="alert" id="toast-alert"><span id="toast-message"></span></div></div>
 
-    <!-- COMMENT/REPLY MODAL -->
-    <dialog id="comment-modal" class="modal">
-        <div class="modal-box max-w-lg">
-            <h3 class="text-lg font-bold flex items-center gap-2"><i data-lucide="message-circle" class="w-5 h-5"></i> <span id="modal-title">Add Comment</span></h3>
-            <p class="text-sm text-base-content/60 mt-1" id="modal-context"></p>
-            <textarea class="textarea textarea-bordered w-full mt-3" id="modal-comment" rows="3" placeholder="Enter your comment... Use @name to mention someone"></textarea>
-            <div class="modal-action">
-                <button class="btn btn-ghost btn-sm" id="modal-cancel">Skip</button>
-                <button class="btn btn-primary btn-sm" id="modal-save"><i data-lucide="save" class="w-4 h-4"></i> Save</button>
-            </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
+    <dialog id="comment-modal" class="modal"><div class="modal-box"><h3 class="text-lg font-bold" id="modal-title">Add Comment</h3><p class="text-sm text-base-content/60 mt-1" id="modal-context"></p><textarea class="textarea textarea-bordered w-full mt-3" id="modal-comment" rows="3" placeholder="Comment... Use @name to mention"></textarea><div class="modal-action"><button class="btn btn-ghost btn-sm" id="modal-cancel">Skip</button><button class="btn btn-primary btn-sm" id="modal-save"><i data-lucide="save" class="w-4 h-4"></i> Save</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
-    <!-- REPLY MODAL -->
-    <dialog id="reply-modal" class="modal">
-        <div class="modal-box max-w-lg">
-            <h3 class="text-lg font-bold flex items-center gap-2"><i data-lucide="reply" class="w-5 h-5"></i> Reply</h3>
-            <div class="text-sm text-base-content/60 mt-1 max-h-32 overflow-y-auto" id="reply-thread"></div>
-            <textarea class="textarea textarea-bordered w-full mt-3" id="reply-comment" rows="3" placeholder="Write a reply... Use @name to mention someone"></textarea>
-            <div class="modal-action">
-                <button class="btn btn-ghost btn-sm" id="reply-cancel">Cancel</button>
-                <button class="btn btn-primary btn-sm" id="reply-save"><i data-lucide="send" class="w-4 h-4"></i> Reply</button>
-            </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
+    <dialog id="export-modal" class="modal"><div class="modal-box"><h3 class="text-lg font-bold">Export</h3><div class="flex flex-col gap-2 mt-4"><button class="btn btn-primary btn-sm" id="export-csv">CSV</button><button class="btn btn-secondary btn-sm" id="export-pdf">PDF Report</button><button class="btn btn-ghost btn-sm" id="export-cancel">Cancel</button></div></div><form method="dialog" class="modal-backdrop"><button>close</button></form></dialog>
 
-    <!-- EXPORT MODAL -->
-    <dialog id="export-modal" class="modal">
-        <div class="modal-box">
-            <h3 class="text-lg font-bold flex items-center gap-2"><i data-lucide="download" class="w-5 h-5"></i> Export Annotations</h3>
-            <div class="flex flex-col gap-3 mt-4">
-                <button class="btn btn-primary" id="export-csv"><i data-lucide="file-spreadsheet" class="w-4 h-4"></i> Export as CSV</button>
-                <button class="btn btn-secondary" id="export-pdf"><i data-lucide="file-text" class="w-4 h-4"></i> Export as PDF Report</button>
-                <button class="btn btn-ghost" id="export-cancel">Cancel</button>
-            </div>
-        </div>
-        <form method="dialog" class="modal-backdrop"><button>close</button></form>
-    </dialog>
-
-    <script src="js/config.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/browser.js"></script>
-    <script src="js/annotations.js"></script>
-    <script src="js/pdf-viewer.js"></script>
-    <script src="js/sidebar.js"></script>
-    <script src="js/review.js"></script>
-    <script>lucide.createIcons();</script>
+    <script>
+    lucide.createIcons();
+    </script>
+    <script src="js/app.js"></script>
 </body>
 </html>
