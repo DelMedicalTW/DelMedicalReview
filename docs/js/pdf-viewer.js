@@ -1,18 +1,13 @@
 var PDFViewer = (function() {
     var pdfDoc = null;
-
     function $(id) { return document.getElementById(id); }
 
     async function loadPDF(contentsPath, name) {
-        Annotations.dispose();
-        pdfDoc = null;
-
-        var toolbar = $('annotation-toolbar');
-        if (toolbar) { toolbar.style.display = 'flex'; }
-        var noPdf = $('no-pdf-message');
-        if (noPdf) { noPdf.style.display = 'none'; }
+        Annotations.dispose(); pdfDoc = null;
+        var toolbar = $('annotation-toolbar'); if (toolbar) toolbar.style.display = 'flex';
+        var noPdf = $('no-pdf-message'); if (noPdf) noPdf.style.display = 'none';
         var scroll = $('pdf-scroll-container');
-        if (!scroll) { return; }
+        if (!scroll) return;
         scroll.innerHTML = '<div class="text-center py-10 text-white/50"><span class="loading loading-spinner loading-lg"></span><p class="mt-3">Loading PDF...</p></div>';
 
         try {
@@ -20,8 +15,8 @@ var PDFViewer = (function() {
             var data = await API.fetchPDF(contentsPath);
             var header = '';
             var bytes = new Uint8Array(data.slice(0, 5));
-            for (var i = 0; i < bytes.length; i++) { header += String.fromCharCode(bytes[i]); }
-            if (header.substring(0, 4) !== '%PDF') { throw new Error('Not a valid PDF'); }
+            for (var i = 0; i < bytes.length; i++) header += String.fromCharCode(bytes[i]);
+            if (header.substring(0, 4) !== '%PDF') throw new Error('Not a valid PDF');
 
             pdfDoc = await pdfjsLib.getDocument({ data: data }).promise;
             scroll.innerHTML = '';
@@ -37,12 +32,10 @@ var PDFViewer = (function() {
                 wrapper.setAttribute('data-page', String(p));
 
                 var pdfCanvas = document.createElement('canvas');
-                pdfCanvas.width = vp.width;
-                pdfCanvas.height = vp.height;
+                pdfCanvas.width = vp.width; pdfCanvas.height = vp.height;
                 await page.render({ canvasContext: pdfCanvas.getContext('2d'), viewport: vp }).promise;
                 wrapper.appendChild(pdfCanvas);
 
-                // Text layer
                 var textContent = await page.getTextContent();
                 var textLayer = document.createElement('div');
                 textLayer.className = 'textLayer';
@@ -50,7 +43,7 @@ var PDFViewer = (function() {
                 textLayer.style.height = vp.height + 'px';
                 textLayer.setAttribute('data-page', String(p));
                 textContent.items.forEach(function(item) {
-                    if (!item.str) { return; }
+                    if (!item.str) return;
                     var tx = pdfjsLib.Util.transform(vp.transform, item.transform);
                     var fontHeight = Math.sqrt(tx[2] * tx[2] + tx[3] * tx[3]);
                     var style = textContent.styles[item.fontName] || {};
@@ -64,38 +57,30 @@ var PDFViewer = (function() {
                 });
                 wrapper.appendChild(textLayer);
 
-                // Annotation canvas
                 var annCanvas = document.createElement('canvas');
                 annCanvas.className = 'ann-canvas';
-                annCanvas.width = vp.width;
-                annCanvas.height = vp.height;
+                annCanvas.width = vp.width; annCanvas.height = vp.height;
                 annCanvas.setAttribute('data-page', String(p));
                 wrapper.appendChild(annCanvas);
 
                 Annotations.createFabricCanvas(p, annCanvas);
                 Annotations.registerPage(p, wrapper);
 
-                // CRITICAL FIX: Use wrapper events that read data-page from the target
                 wrapper.addEventListener('mouseup', function(e) {
                     var pw = e.currentTarget.closest('.page-wrapper');
                     if (pw) {
                         var pageNum = parseInt(pw.getAttribute('data-page'));
-                        if (!isNaN(pageNum)) {
-                            Annotations.handleHighlight(pageNum);
-                        }
+                        if (!isNaN(pageNum)) Annotations.handleHighlight(pageNum);
                     }
                 });
                 wrapper.addEventListener('dblclick', function(e) {
                     var pw = e.currentTarget.closest('.page-wrapper');
                     if (pw) {
                         var pageNum = parseInt(pw.getAttribute('data-page'));
-                        if (!isNaN(pageNum)) {
-                            Annotations.handleSticky(e, pageNum);
-                        }
+                        if (!isNaN(pageNum)) Annotations.handleSticky(e, pageNum);
                     }
                 });
 
-                // Page label
                 var label = document.createElement('div');
                 label.className = 'page-label';
                 label.textContent = 'Page ' + p;
@@ -108,6 +93,20 @@ var PDFViewer = (function() {
             Annotations.setTool('select');
             Sidebar.render(Annotations.getAnnotations());
 
+            // Check permalink
+            var params = new URLSearchParams(window.location.search);
+            var permalink = params.get('annotation');
+            if (permalink) {
+                var anns = Annotations.getAnnotations();
+                for (var k = 0; k < anns.length; k++) {
+                    if (anns[k].id === permalink) {
+                        Annotations.scrollToPage(anns[k].page);
+                        Sidebar.highlightAnnotation(k);
+                        break;
+                    }
+                }
+            }
+
             var count = Annotations.getAnnotations().length;
             UI.showToast('Loaded ' + pdfDoc.numPages + ' pages, ' + count + ' annotations', 'success');
         } catch (err) {
@@ -118,8 +117,5 @@ var PDFViewer = (function() {
         }
     }
 
-    return {
-        loadPDF: loadPDF,
-        getPDFDoc: function() { return pdfDoc; }
-    };
+    return { loadPDF: loadPDF, getPDFDoc: function() { return pdfDoc; } };
 })();
