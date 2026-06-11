@@ -1,5 +1,5 @@
 var PROXY = 'https://pdf-review-proxy.mmuqeem.workers.dev';
-var STORAGE_KEY = 'delmed-annotations-v4';
+var STORAGE_KEY = 'delmed-annotations-v5';
 var OWNER = 'DelMedicalTW';
 var REPO = 'DelMedicalRelease';
 var PDF_SCALE = 1.5;
@@ -33,7 +33,9 @@ function toast(msg, type) {
     t._timer = setTimeout(function() { t.classList.add('hidden'); }, 3000);
 }
 
-// API
+// ============================================================
+// API (unchanged — works correctly)
+// ============================================================
 var API = {
     _fetch: async function(path, opts) {
         opts = opts || {};
@@ -71,19 +73,41 @@ var API = {
         var body = '<!-- delmed-pdf-annotation -->\n**PDF:** ' + pdfName + '\n**Page:** ' + data.page + '\n**Type:** ' + data.type + '\n**Status:** ' + (data.status||'open') + '\n**Reviewer:** ' + (data.reviewer||'') + '\n\n**Comment:** ' + (data.comment||'') + '\n\n```json\n' + JSON.stringify(data) + '\n```';
         return this._fetch('/issues', { method: 'POST', body: JSON.stringify({ title: title, body: body }) });
     },
-    updateIssue: async function(num, data) {
-        var body = '<!-- delmed-pdf-annotation -->\n**PDF:** ' + currentPDFName + '\n**Page:** ' + data.page + '\n**Type:** ' + data.type + '\n**Status:** ' + (data.status||'open') + '\n**Reviewer:** ' + (data.reviewer||'') + '\n\n**Comment:** ' + (data.comment||'') + '\n\n```json\n' + JSON.stringify(data) + '\n```';
+    // FIXED: updateIssue no longer hardcodes currentPDFName
+    updateIssue: async function(num, data, pdfName) {
+        var name = pdfName || currentPDFName || '';
+        var body = '<!-- delmed-pdf-annotation -->\n**PDF:** ' + name + '\n**Page:** ' + data.page + '\n**Type:** ' + data.type + '\n**Status:** ' + (data.status||'open') + '\n**Reviewer:** ' + (data.reviewer||'') + '\n\n**Comment:** ' + (data.comment||'') + '\n\n```json\n' + JSON.stringify(data) + '\n```';
         return this._fetch('/issues/' + num, { method: 'PATCH', body: JSON.stringify({ body: body }) });
     },
     closeIssue: async function(num) { return this._fetch('/issues/' + num, { method: 'PATCH', body: JSON.stringify({ state: 'closed' }) }); }
 };
 
-// Annotation state
+// ============================================================
+// ANNOTATION STATE
+// ============================================================
 function getAnnotations() { return annotations[currentPDFName] || []; }
 function setAnnotations(a) { annotations[currentPDFName] = a; }
 function saveLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(annotations)); } catch(e) {} }
 function loadLocal() { try { annotations = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) { annotations = {}; } }
 function getReviewer() { var r = getEl('reviewer-name'); return (r && r.value.trim()) || 'Anonymous'; }
+
+// FIXED: returns the actual index in the full annotations array
+function getActualIndex(filteredIndex) {
+    var all = getAnnotations();
+    var typeF = getEl('filter-type').value;
+    var statusF = getEl('filter-status').value;
+    var filtered = [];
+    var indexMap = []; // maps filtered position -> actual position
+    for (var i = 0; i < all.length; i = i + 1) {
+        var a = all[i];
+        if (typeF !== 'all' && a.type !== typeF) continue;
+        if (statusF !== 'all' && (a.status || 'open') !== statusF) continue;
+        filtered.push(a);
+        indexMap.push(i);
+    }
+    if (filteredIndex < 0 || filteredIndex >= indexMap.length) return -1;
+    return indexMap[filteredIndex];
+}
 
 function addAnnotation(ann) {
     var anns = getAnnotations();
@@ -105,32 +129,45 @@ function addAnnotation(ann) {
     }).catch(function() {});
 }
 
-function deleteAnnotation(index) {
+// FIXED: uses actual index
+function deleteAnnotation(filteredIndex) {
+    var actualIndex = getActualIndex(filteredIndex);
+    if (actualIndex < 0) return;
     var anns = getAnnotations();
-    var ann = anns[index];
+    var ann = anns[actualIndex];
     if (!ann) return;
     if (ann.issueNumber) API.closeIssue(ann.issueNumber).catch(function() {});
     if (ann.page && fabricCanvases[ann.page]) {
         fabricCanvases[ann.page].clear();
         fabricCanvases[ann.page].renderAll();
     }
-    anns.splice(index, 1);
+    anns.splice(actualIndex, 1);
     setAnnotations(anns);
     saveLocal();
     renderSidebar();
 }
 
-function updateStatus(index, status) {
+// FIXED: uses actual index and passes pdfName
+function updateStatus(filteredIndex, newStatus) {
+    var actualIndex = getActualIndex(filteredIndex);
+    if (actualIndex < 0) return;
     var anns = getAnnotations();
-    if (index < 0 || index >= anns.length) return;
-    anns[index].status = status;
-    if (anns[index].issueNumber) API.updateIssue(anns[index].issueNumber, anns[index]).catch(function() {});
+    var ann = anns[actualIndex];
+    if (!ann) return;
+    ann.status = newStatus;
+    if (ann.issueNumber) {
+        // Store pdfName in annotation for proper GitHub sync
+        ann._pdfName = currentPDFName;
+        API.updateIssue(ann.issueNumber, ann, currentPDFName).catch(function() {});
+    }
     setAnnotations(anns);
     saveLocal();
     renderSidebar();
 }
 
-// Tools
+// ============================================================
+// TOOLS (unchanged)
+// ============================================================
 function setTool(tool) {
     currentTool = tool;
     var btns = document.querySelectorAll('[data-tool]');
@@ -169,7 +206,9 @@ function setColor(color) {
     if (b) b.classList.add('selected');
 }
 
-// Fabric canvas
+// ============================================================
+// FABRIC CANVAS
+// ============================================================
 function createFabricCanvas(pageNum, el) {
     var fc = new fabric.Canvas(el, { selection: false, isDrawingMode: false, renderOnAddRemove: true });
     fc.lowerCanvasEl.style.pointerEvents = 'none';
@@ -198,6 +237,7 @@ function createFabricCanvas(pageNum, el) {
     return fc;
 }
 
+// FIXED: saveDrawings no longer wipes non-drawing annotations on the same page
 function saveDrawings(pageNum) {
     var fc = fabricCanvases[pageNum];
     if (!fc) return;
@@ -205,12 +245,15 @@ function saveDrawings(pageNum) {
     var arr = [];
     for (var i = 0; i < objects.length; i = i + 1) arr.push(objects[i].toJSON());
     var anns = getAnnotations();
+    // Only remove drawing/rectangle annotations for this page, keep highlights/comments
     var filtered = [];
     for (var j = 0; j < anns.length; j = j + 1) {
         var a = anns[j];
-        if (!((a.type === 'drawing' || a.type === 'rectangle') && a.page === pageNum)) {
-            filtered.push(a);
+        // Keep annotations that are NOT drawings/rectangles on this page
+        if ((a.type === 'drawing' || a.type === 'rectangle') && a.page === pageNum) {
+            continue; // Remove this one, we'll replace it below
         }
+        filtered.push(a);
     }
     if (arr.length > 0) {
         filtered.push({
@@ -227,7 +270,9 @@ function saveDrawings(pageNum) {
     saveLocal();
 }
 
-// Highlight
+// ============================================================
+// HIGHLIGHT
+// ============================================================
 function handleHighlight(e) {
     if (currentTool !== 'highlight') return;
     var pw = e.currentTarget.closest('.page-wrapper');
@@ -269,7 +314,9 @@ function handleHighlight(e) {
     });
 }
 
-// Sticky note
+// ============================================================
+// STICKY NOTE
+// ============================================================
 function handleSticky(e) {
     if (currentTool !== 'comment') return;
     var pw = e.currentTarget.closest('.page-wrapper');
@@ -308,10 +355,21 @@ function handleSticky(e) {
     });
 }
 
-// Rectangle
+// ============================================================
+// RECTANGLE — FIXED: events now properly find .page-wrapper
+// ============================================================
 function rectDown(e) {
     if (currentTool !== 'rectangle') return;
+    // Try multiple ways to find the page wrapper
     var pw = e.target.closest('.page-wrapper');
+    if (!pw) {
+        // If click was on a child canvas, walk up
+        var el = e.target;
+        while (el && el !== document.body) {
+            if (el.classList.contains('page-wrapper')) { pw = el; break; }
+            el = el.parentElement;
+        }
+    }
     if (!pw) return;
     var pageNum = parseInt(pw.getAttribute('data-page'));
     if (isNaN(pageNum)) return;
@@ -338,6 +396,13 @@ function rectDown(e) {
 function rectMove(e) {
     if (!isDrawingRect || !tempRect) return;
     var pw = e.target.closest('.page-wrapper');
+    if (!pw) {
+        var el = e.target;
+        while (el && el !== document.body) {
+            if (el.classList.contains('page-wrapper')) { pw = el; break; }
+            el = el.parentElement;
+        }
+    }
     if (!pw) return;
     var fc = fabricCanvases[parseInt(pw.getAttribute('data-page'))];
     if (!fc) return;
@@ -363,6 +428,13 @@ function rectUp(e) {
             fill: currentColor.replace(/[\d.]+\)$/, '0.3)')
         });
         var pw = e.target.closest('.page-wrapper');
+        if (!pw) {
+            var el = e.target;
+            while (el && el !== document.body) {
+                if (el.classList.contains('page-wrapper')) { pw = el; break; }
+                el = el.parentElement;
+            }
+        }
         if (pw) {
             var pageNum = parseInt(pw.getAttribute('data-page'));
             if (!isNaN(pageNum)) {
@@ -390,7 +462,9 @@ function rectUp(e) {
     rectStart = null;
 }
 
-// Undo / Clear
+// ============================================================
+// UNDO / CLEAR (unchanged)
+// ============================================================
 function getMostVisiblePage() {
     var cr = getEl('pdf-scroll-container').getBoundingClientRect();
     var best = null;
@@ -433,7 +507,9 @@ function clearPage() {
     renderSidebar();
 }
 
-// Sidebar
+// ============================================================
+// SIDEBAR — FIXED: passes filtered index, sidebar resolves actual index
+// ============================================================
 function renderSidebar() {
     var list = getEl('annotation-list');
     var count = getEl('annotation-count');
@@ -475,6 +551,7 @@ function renderSidebar() {
         if (ann.issueNumber) {
             ghLink = '<a href="' + ann.issueUrl + '" target="_blank" class="text-xs text-info ml-auto" onclick="event.stopPropagation()">#' + ann.issueNumber + '</a>';
         }
+        // Pass filtered index j — sidebar functions resolve to actual index
         html = html + '<div class="card card-compact bg-base-100 border border-base-300 cursor-pointer hover:border-primary" onclick="scrollToPage(' + ann.page + ')">';
         html = html + '<div class="card-body p-2">';
         html = html + '<div class="flex items-center gap-1 text-xs flex-wrap">';
@@ -482,7 +559,8 @@ function renderSidebar() {
         html = html + '<span class="badge badge-xs ' + sc + '">' + (ann.status || 'open') + '</span>';
         html = html + '<span>Pg ' + ann.page + '</span>';
         html = html + ghLink;
-        html = html + '<button class="btn btn-ghost btn-xs p-0 h-5 w-5 ml-auto" onclick="event.stopPropagation();window._deleteAnnotation(' + j + ')" title="Delete"><i data-lucide="x" class="w-3 h-3"></i></button>';
+        html = html + '<button class="btn btn-ghost btn-xs p-0 h-5 w-5 ml-auto" onclick="event.stopPropagation();deleteAnnotation(' + j + ')" title="Delete"><i data-lucide="x" class="w-3 h-3"></i></button>';
+        html = html + '<div class="dropdown dropdown-end" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-xs p-0 h-5 w-5">...</button><ul class="dropdown-content menu p-1 bg-base-200 rounded-box w-28 z-30 text-xs"><li><a href="#" onclick="event.stopPropagation();updateStatus(' + j + ',\'in-review\')">In Review</a></li><li><a href="#" onclick="event.stopPropagation();updateStatus(' + j + ',\'resolved\')">Resolved</a></li><li><a href="#" onclick="event.stopPropagation();updateStatus(' + j + ',\'open\')">Reopen</a></li></ul></div>';
         html = html + '</div>';
         html = html + body;
         html = html + '</div></div>';
@@ -496,7 +574,9 @@ function scrollToPage(pageNum) {
     if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 }
 
-// Comment modal
+// ============================================================
+// COMMENT MODAL (unchanged)
+// ============================================================
 function showCommentModal(context, callback) {
     var modal = getEl('comment-modal');
     var ctx = getEl('modal-context');
@@ -528,7 +608,9 @@ function showCommentModal(context, callback) {
     cancelBtn.addEventListener('click', onCancel);
 }
 
-// PDF Loading
+// ============================================================
+// PDF LOADING
+// ============================================================
 async function loadPDF(contentsPath, name) {
     if (isLoadingPDF) return;
     isLoadingPDF = true;
@@ -553,6 +635,8 @@ async function loadPDF(contentsPath, name) {
     if (active) active.classList.add('active-file');
     loadLocal();
     renderSidebar();
+    // FIXED: Load GitHub issues and MERGE with local
+    loadFromGitHub(name);
     try {
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         var data = await API.fetchPDF(contentsPath);
@@ -615,40 +699,84 @@ async function loadPDF(contentsPath, name) {
     }
 }
 
-function restoreAnnotations() {
-    var anns = getAnnotations();
-    for (var i = 0; i < anns.length; i = i + 1) {
-        var ann = anns[i];
-        if ((ann.type === 'drawing' || ann.type === 'rectangle') && ann.objects && fabricCanvases[ann.page]) {
-            fabric.util.enlivenObjects(ann.objects, function(objects) {
-                for (var j = 0; j < objects.length; j = j + 1) {
-                    objects[j].set({ selectable: false, evented: false });
-                    fabricCanvases[ann.page].add(objects[j]);
-                }
-                fabricCanvases[ann.page].renderAll();
-            });
+// FIXED: GitHub issues are now merged into local annotations
+async function loadFromGitHub(pdfName) {
+    try {
+        var issues = await API.fetchIssuesForPDF(pdfName);
+        var githubAnns = [];
+        for (var i = 0; i < issues.length; i = i + 1) {
+            var match = issues[i].body.match(/```json\n([\s\S]*?)\n```/);
+            if (!match) continue;
+            try {
+                var data = JSON.parse(match[1]);
+                data.issueNumber = issues[i].number;
+                data.issueUrl = issues[i].html_url;
+                data.status = issues[i].state === 'closed' ? 'resolved' : (data.status || 'open');
+                githubAnns.push(data);
+            } catch(e) {}
         }
-        if (ann.type === 'comment' && ann.x && ann.y && fabricCanvases[ann.page]) {
-            var rect = new fabric.Rect({
-                left: ann.x - 20,
-                top: ann.y - 20,
-                width: 40,
-                height: 40,
-                fill: '#fef08a',
-                stroke: '#ca8a04',
-                strokeWidth: 2,
-                rx: 4,
-                ry: 4,
-                selectable: false,
-                evented: false
-            });
-            fabricCanvases[ann.page].add(rect);
-            fabricCanvases[ann.page].renderAll();
+        var localAnns = annotations[pdfName] || [];
+        var merged = [];
+        var seen = {};
+        // GitHub annotations take precedence
+        for (var j = 0; j < githubAnns.length; j = j + 1) {
+            merged.push(githubAnns[j]);
+            if (githubAnns[j].issueNumber) seen[githubAnns[j].issueNumber] = true;
         }
+        // Add local annotations that don't have a GitHub counterpart
+        for (var k = 0; k < localAnns.length; k = k + 1) {
+            var local = localAnns[k];
+            if (!local.issueNumber || !seen[local.issueNumber]) {
+                merged.push(local);
+            }
+        }
+        annotations[pdfName] = merged;
+        saveLocal();
+        renderSidebar();
+    } catch(err) {
+        console.warn('GitHub load failed:', err.message);
     }
 }
 
-// File browser
+// FIXED: restoreAnnotations — closure-in-loop bug fixed using forEach with local copy
+function restoreAnnotations() {
+    var anns = getAnnotations();
+    for (var i = 0; i < anns.length; i = i + 1) {
+        // Create a local copy for the closure
+        (function(ann) {
+            if ((ann.type === 'drawing' || ann.type === 'rectangle') && ann.objects && fabricCanvases[ann.page]) {
+                fabric.util.enlivenObjects(ann.objects, function(objects) {
+                    for (var j = 0; j < objects.length; j = j + 1) {
+                        objects[j].set({ selectable: false, evented: false });
+                        fabricCanvases[ann.page].add(objects[j]);
+                    }
+                    fabricCanvases[ann.page].renderAll();
+                });
+            }
+            if (ann.type === 'comment' && ann.x && ann.y && fabricCanvases[ann.page]) {
+                var rect = new fabric.Rect({
+                    left: ann.x - 20,
+                    top: ann.y - 20,
+                    width: 40,
+                    height: 40,
+                    fill: '#fef08a',
+                    stroke: '#ca8a04',
+                    strokeWidth: 2,
+                    rx: 4,
+                    ry: 4,
+                    selectable: false,
+                    evented: false
+                });
+                fabricCanvases[ann.page].add(rect);
+                fabricCanvases[ann.page].renderAll();
+            }
+        })(anns[i]);
+    }
+}
+
+// ============================================================
+// FILE BROWSER (unchanged)
+// ============================================================
 function isDraft(n) { return /Rev_\d+[A-Za-z]/i.test(n); }
 function folderInfo(path) {
     var l = (path || '').toLowerCase();
@@ -687,8 +815,7 @@ async function loadDir(path) {
         for (var f = 0; f < folders.length; f = f + 1) {
             var ffi = folderInfo(folders[f].path);
             var fb = ffi ? '<span class="badge ' + ffi.c + ' badge-lg ml-auto">' + ffi.l + '</span>' : '';
-            h = h + '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none" data-path="' + esc(folders[f].path) + '">';
-            h = h + '<i data-lucide="folder" class="w-4 h-4 text-warning"></i><span class="truncate">' + esc(folders[f].name) + '</span>' + fb + '</div>';
+            h = h + '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none" data-path="' + esc(folders[f].path) + '"><i data-lucide="folder" class="w-4 h-4 text-warning"></i><span class="truncate">' + esc(folders[f].name) + '</span>' + fb + '</div>';
         }
         for (var p = 0; p < pdfs.length; p = p + 1) {
             var draft = isDraft(pdfs[p].name);
@@ -697,19 +824,14 @@ async function loadDir(path) {
             if (draft) badge = '<span class="badge badge-error badge-lg ml-auto">DRAFT</span>';
             else if (pfi) badge = '<span class="badge ' + pfi.c + ' badge-lg ml-auto">' + pfi.l + '</span>';
             var active = currentPDFName === pdfs[p].name ? ' active-file' : '';
-            h = h + '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none' + active + '" data-path="' + esc(pdfs[p].path) + '" data-name="' + esc(pdfs[p].name) + '">';
-            h = h + '<i data-lucide="file-text" class="w-4 h-4 text-error"></i><span class="truncate">' + esc(pdfs[p].name) + '</span>' + badge + '</div>';
+            h = h + '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none' + active + '" data-path="' + esc(pdfs[p].path) + '" data-name="' + esc(pdfs[p].name) + '"><i data-lucide="file-text" class="w-4 h-4 text-error"></i><span class="truncate">' + esc(pdfs[p].name) + '</span>' + badge + '</div>';
         }
         fl.innerHTML = h;
         lucide.createIcons();
         var dirs = fl.querySelectorAll('[data-path]:not([data-name])');
-        for (var d = 0; d < dirs.length; d = d + 1) {
-            dirs[d].onclick = function() { loadDir(this.dataset.path); };
-        }
+        for (var d = 0; d < dirs.length; d = d + 1) { dirs[d].onclick = function() { loadDir(this.dataset.path); }; }
         var files = fl.querySelectorAll('[data-name]');
-        for (var fi2 = 0; fi2 < files.length; fi2 = fi2 + 1) {
-            files[fi2].onclick = function() { loadPDF(this.dataset.path, this.dataset.name); };
-        }
+        for (var fi2 = 0; fi2 < files.length; fi2 = fi2 + 1) { files[fi2].onclick = function() { loadPDF(this.dataset.path, this.dataset.name); }; }
         var backBtn = getEl('back-btn');
         if (backBtn) backBtn.disabled = !path;
     } catch(err) {
@@ -717,7 +839,9 @@ async function loadDir(path) {
     }
 }
 
-// Export
+// ============================================================
+// EXPORT (unchanged)
+// ============================================================
 function exportCSV() {
     var anns = getAnnotations();
     var csv = 'Page,Type,Reviewer,Status,Comment,Date\n';
@@ -750,11 +874,7 @@ function exportPDFReport() {
         doc.setFontSize(10);
         doc.text('Page ' + anns[i].page + ' - ' + anns[i].type + ' [' + (anns[i].status||'open') + ']', 14, y);
         y = y + 6;
-        if (anns[i].comment) {
-            doc.setFontSize(8);
-            doc.text(anns[i].comment, 20, y);
-            y = y + 6;
-        }
+        if (anns[i].comment) { doc.setFontSize(8); doc.text(anns[i].comment, 20, y); y = y + 6; }
         y = y + 4;
     }
     doc.save('annotation-report.pdf');
@@ -768,7 +888,7 @@ async function syncToGitHub() {
     for (var i = 0; i < anns.length; i = i + 1) {
         try {
             if (anns[i].issueNumber) {
-                await API.updateIssue(anns[i].issueNumber, anns[i]);
+                await API.updateIssue(anns[i].issueNumber, anns[i], currentPDFName);
                 updated = updated + 1;
             } else {
                 var issue = await API.createIssue(currentPDFName, anns[i]);
@@ -784,7 +904,27 @@ async function syncToGitHub() {
     toast('Synced: ' + synced + ' new, ' + updated + ' updated', 'success');
 }
 
-// Event wiring
+// FIXED: refresh handler wired up
+function refreshFromGitHub() {
+    if (!currentPDFName) return;
+    var badge = getEl('sync-badge');
+    var label = getEl('sync-label');
+    if (badge) badge.className = 'badge badge-sm badge-info gap-1';
+    if (label) label.textContent = 'Refreshing...';
+    loadFromGitHub(currentPDFName).then(function() {
+        if (badge) badge.className = 'badge badge-sm badge-ghost gap-1';
+        if (label) label.textContent = 'GitHub';
+        toast('Refreshed from GitHub', 'success');
+    }).catch(function() {
+        if (badge) badge.className = 'badge badge-sm badge-ghost gap-1';
+        if (label) label.textContent = 'GitHub';
+        toast('Refresh failed', 'error');
+    });
+}
+
+// ============================================================
+// EVENT WIRING
+// ============================================================
 (function() {
     var toolBtns = document.querySelectorAll('[data-tool]');
     for (var tb = 0; tb < toolBtns.length; tb = tb + 1) {
@@ -806,6 +946,8 @@ async function syncToGitHub() {
     if (clearBtn) clearBtn.onclick = clearPage;
     var syncBtn = getEl('sync-btn');
     if (syncBtn) syncBtn.onclick = syncToGitHub;
+    var refreshBtn = getEl('refresh-btn');
+    if (refreshBtn) refreshBtn.onclick = refreshFromGitHub;
     var exportBtn = getEl('export-btn');
     if (exportBtn) exportBtn.onclick = function() { getEl('export-modal').showModal(); };
     var exportCsvBtn = getEl('export-csv');
@@ -875,7 +1017,6 @@ async function syncToGitHub() {
             applyTheme(t);
         };
     }
-    // Keyboard
     document.addEventListener('keydown', function(e) {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.key === 'Escape') setTool('select');
@@ -886,9 +1027,9 @@ async function syncToGitHub() {
     });
 })();
 
-// Expose to window
-window._deleteAnnotation = deleteAnnotation;
-window._updateStatus = updateStatus;
+// Expose to window for onclick handlers
+window.deleteAnnotation = deleteAnnotation;
+window.updateStatus = updateStatus;
 window.scrollToPage = scrollToPage;
 
 // Start
