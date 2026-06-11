@@ -76,7 +76,6 @@ var Annotations = (function() {
         setAnnotations(anns);
         saveLocal();
         Sidebar.render(getAnnotations());
-        // Auto-sync in background
         var pdfName = App.getCurrentPDFName();
         API.createAnnotationIssue(pdfName, ann).then(function(issue) {
             ann.issueNumber = issue.number;
@@ -110,7 +109,6 @@ var Annotations = (function() {
         };
         anns[index].replies = anns[index].replies || [];
         anns[index].replies.push(reply);
-        // Post reply to GitHub as issue comment
         if (anns[index].issueNumber) {
             var commentBody = '**' + reply.reviewer + '** replied:\n' + replyText;
             API.addIssueComment(anns[index].issueNumber, commentBody).catch(function() {});
@@ -371,7 +369,6 @@ var Annotations = (function() {
         });
     }
 
-    // Keyboard navigation
     function navigateAnnotations(direction) {
         var filtered = Sidebar.getFilteredAnnotations();
         if (!filtered.length) return;
@@ -388,68 +385,111 @@ var Annotations = (function() {
                 setTimeout(function() { c.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)'; }, 2000);
             }
         }
-        // Highlight in sidebar
         Sidebar.highlightAnnotation(currentAnnotationIndex);
     }
-
-    // Wire toolbar events
-    document.querySelectorAll('[data-tool]').forEach(function(b) { b.onclick = function() { setTool(b.dataset.tool); }; });
-    document.querySelectorAll('.color-btn').forEach(function(b) { b.onclick = function() { setColor(b.dataset.color); }; });
-    var scrollEl = $('pdf-scroll-container');
-    if (scrollEl) {
-        scrollEl.addEventListener('mousedown', handleRectDown);
-        scrollEl.addEventListener('mousemove', handleRectMove);
-        scrollEl.addEventListener('mouseup', handleRectUp);
-    }
-    var undoBtn = $('undo-btn'); if (undoBtn) undoBtn.onclick = undo;
-    var clearBtn = $('clear-page'); if (clearBtn) clearBtn.onclick = clearPage;
-    var syncBtn = $('sync-btn');
-    if (syncBtn) syncBtn.onclick = async function() { var r = await syncToGitHub(); UI.showToast('Synced: ' + r.synced + ' new, ' + r.updated + ' updated', 'success'); };
-
-    // Export
-    var exportBtn = $('export-btn');
-    if (exportBtn) exportBtn.onclick = function() { document.getElementById('export-modal').showModal(); };
-    $('export-csv').onclick = function() { exportCSV(); document.getElementById('export-modal').close(); };
-    $('export-pdf').onclick = function() { exportPDFReport(); document.getElementById('export-modal').close(); };
-    $('export-cancel').onclick = function() { document.getElementById('export-modal').close(); };
 
     function exportCSV() {
         var anns = getAnnotations();
         var csv = 'Page,Type,Reviewer,Status,Comment,Date\n';
         anns.forEach(function(a) {
-            csv = csv + a.page + ',' + a.type + ',' + (a.reviewer || '') + ',' + (a.status || 'open') + ',"' + (a.comment || '').replace(/"/g, '""') + '",' + a.timestamp + '\n';
+            var comment = (a.comment || '').replace(/"/g, '""');
+            csv = csv + a.page + ',' + a.type + ',' + (a.reviewer || '') + ',' + (a.status || 'open') + ',"' + comment + '",' + a.timestamp + '\n';
         });
         var blob = new Blob([csv], { type: 'text/csv' });
         var url = URL.createObjectURL(blob);
         var link = document.createElement('a');
-        link.href = url; link.download = 'annotations-' + (App.getCurrentPDFName() || 'export') + '.csv';
-        link.click(); URL.revokeObjectURL(url);
+        link.href = url;
+        link.download = 'annotations-' + (App.getCurrentPDFName() || 'export') + '.csv';
+        link.click();
+        URL.revokeObjectURL(url);
         UI.showToast('CSV exported', 'success');
     }
 
     function exportPDFReport() {
         var anns = getAnnotations();
         var doc = new jspdf.jsPDF();
+        var pdfName = App.getCurrentPDFName() || 'Unknown';
         doc.setFontSize(16);
         doc.text('Annotation Report', 14, 20);
         doc.setFontSize(10);
-        doc.text('Document: ' + (App.getCurrentPDFName() || 'Unknown'), 14, 30);
+        doc.text('Document: ' + pdfName, 14, 30);
         doc.text('Exported: ' + new Date().toLocaleString(), 14, 36);
         doc.text('Total Annotations: ' + anns.length, 14, 42);
         var y = 52;
-        anns.forEach(function(a, i) {
+        for (var i = 0; i < anns.length; i++) {
+            var a = anns[i];
             if (y > 270) { doc.addPage(); y = 20; }
             doc.setFontSize(11);
             doc.text('#' + (i + 1) + ' Page ' + a.page + ' - ' + a.type + ' [' + (a.status || 'open') + ']', 14, y);
             y += 7;
             doc.setFontSize(9);
             if (a.comment) { doc.text('Comment: ' + a.comment, 20, y); y += 6; }
-            if (a.quotedText) { doc.text('Quoted: ' + a.quotedText.substring(0, 100), 20, y); y += 6; }
+            if (a.quotedText) {
+                var qt = a.quotedText;
+                if (qt.length > 100) qt = qt.substring(0, 100);
+                doc.text('Quoted: ' + qt, 20, y); y += 6;
+            }
             doc.text('By: ' + (a.reviewer || 'Unknown') + ' on ' + new Date(a.timestamp).toLocaleString(), 20, y);
             y += 10;
-        });
-        doc.save('annotation-report-' + (App.getCurrentPDFName() || 'export') + '.pdf');
+        }
+        doc.save('annotation-report-' + pdfName + '.pdf');
         UI.showToast('PDF report exported', 'success');
+    }
+
+    // Wire toolbar
+    document.querySelectorAll('[data-tool]').forEach(function(b) { b.onclick = function() { setTool(b.dataset.tool); }; });
+    document.querySelectorAll('.color-btn').forEach(function(b) { b.onclick = function() { setColor(b.dataset.color); }; });
+
+    var scrollEl = $('pdf-scroll-container');
+    if (scrollEl) {
+        scrollEl.addEventListener('mousedown', handleRectDown);
+        scrollEl.addEventListener('mousemove', handleRectMove);
+        scrollEl.addEventListener('mouseup', handleRectUp);
+    }
+
+    var undoBtn = $('undo-btn'); if (undoBtn) undoBtn.onclick = undo;
+    var clearBtn = $('clear-page'); if (clearBtn) clearBtn.onclick = clearPage;
+
+    var syncBtn = $('sync-btn');
+    if (syncBtn) {
+        syncBtn.onclick = async function() {
+            var r = await syncToGitHub();
+            UI.showToast('Synced: ' + r.synced + ' new, ' + r.updated + ' updated', 'success');
+        };
+    }
+
+    var exportBtn = $('export-btn');
+    if (exportBtn) {
+        exportBtn.onclick = function() {
+            var modal = document.getElementById('export-modal');
+            if (modal) modal.showModal();
+        };
+    }
+
+    var exportCsvBtn = $('export-csv');
+    if (exportCsvBtn) {
+        exportCsvBtn.onclick = function() {
+            exportCSV();
+            var modal = document.getElementById('export-modal');
+            if (modal) modal.close();
+        };
+    }
+
+    var exportPdfBtn = $('export-pdf');
+    if (exportPdfBtn) {
+        exportPdfBtn.onclick = function() {
+            exportPDFReport();
+            var modal = document.getElementById('export-modal');
+            if (modal) modal.close();
+        };
+    }
+
+    var exportCancelBtn = $('export-cancel');
+    if (exportCancelBtn) {
+        exportCancelBtn.onclick = function() {
+            var modal = document.getElementById('export-modal');
+            if (modal) modal.close();
+        };
     }
 
     // Comment modal
@@ -460,89 +500,107 @@ var Annotations = (function() {
         var txt = document.getElementById('modal-comment');
         var saveBtn = document.getElementById('modal-save');
         var cancelBtn = document.getElementById('modal-cancel');
-        if (!modal || !ctx || !txt || !saveBtn || !cancelBtn) { if (callback) callback(''); return; }
+        if (!modal || !ctx || !txt || !saveBtn || !cancelBtn) {
+            if (callback) callback('');
+            return;
+        }
         if (title) title.textContent = 'Add Comment';
-        ctx.textContent = context; txt.value = '';
-        modal.showModal(); setTimeout(function() { txt.focus(); }, 100);
-        function onSave() { var c = txt.value.trim(); modal.close(); saveBtn.removeEventListener('click', onSave); cancelBtn.removeEventListener('click', onCancel); if (callback) callback(c || ''); }
-        function onCancel() { modal.close(); saveBtn.removeEventListener('click', onCancel); cancelBtn.removeEventListener('click', onCancel); if (callback) callback(''); }
-        saveBtn.addEventListener('click', onSave); cancelBtn.addEventListener('click', onCancel);
-    };
+        ctx.textContent = context;
+        txt.value = '';
+        modal.showModal();
+        setTimeout(function() { txt.focus(); }, 100);
 
-    // Reply modal
-    window.showReplyModal = function(annotationIndex) {
-        var modal = document.getElementById('reply-modal');
-        var thread = document.getElementById('reply-thread');
-        var txt = document.getElementById('reply-comment');
-        var saveBtn = document.getElementById('reply-save');
-        var cancelBtn = document.getElementById('reply-cancel');
-        if (!modal || !thread || !txt) return;
-        var anns = getAnnotations();
-        var ann = anns[annotationIndex];
-        if (!ann) return;
-        var html = '<p class="font-semibold">' + esc(ann.comment || 'No comment') + '</p>';
-        (ann.replies || []).forEach(function(r) {
-            html = html + '<div class="ml-2 mt-1 pl-2 border-l-2 border-base-300"><span class="text-xs font-semibold">' + esc(r.reviewer) + '</span><p class="text-xs">' + esc(r.text) + '</p></div>';
-        });
-        thread.innerHTML = html; txt.value = '';
-        modal.showModal(); setTimeout(function() { txt.focus(); }, 100);
-        function onSave() { var c = txt.value.trim(); modal.close(); saveBtn.removeEventListener('click', onSave); cancelBtn.removeEventListener('click', onCancel); if (c) addReply(annotationIndex, c); }
-        function onCancel() { modal.close(); saveBtn.removeEventListener('click', onSave); cancelBtn.removeEventListener('click', onCancel); }
-        saveBtn.addEventListener('click', onSave); cancelBtn.addEventListener('click', onCancel);
+        function onSave() {
+            var c = txt.value.trim();
+            modal.close();
+            saveBtn.removeEventListener('click', onSave);
+            cancelBtn.removeEventListener('click', onCancel);
+            if (callback) callback(c || '');
+        }
+        function onCancel() {
+            modal.close();
+            saveBtn.removeEventListener('click', onSave);
+            cancelBtn.removeEventListener('click', onCancel);
+            if (callback) callback('');
+        }
+        saveBtn.addEventListener('click', onSave);
+        cancelBtn.addEventListener('click', onCancel);
     };
 
     return {
-        setTool: setTool, setColor: setColor,
-        createFabricCanvas: createFabricCanvas, registerPage: registerPage,
-        handleHighlight: handleHighlight, handleSticky: handleSticky,
-        getAnnotations: getAnnotations, setAnnotations: setAnnotations,
-        saveLocal: saveLocal, loadLocal: loadLocal,
+        setTool: setTool,
+        setColor: setColor,
+        createFabricCanvas: createFabricCanvas,
+        registerPage: registerPage,
+        handleHighlight: handleHighlight,
+        handleSticky: handleSticky,
+        getAnnotations: getAnnotations,
+        setAnnotations: setAnnotations,
+        saveLocal: saveLocal,
+        loadLocal: loadLocal,
         loadFromGitHub: async function(pdfName) {
             try {
                 var issues = await API.fetchIssuesForPDF(pdfName);
                 var githubAnns = [];
-                issues.forEach(function(issue) {
+                for (var i = 0; i < issues.length; i++) {
+                    var issue = issues[i];
                     var match = issue.body.match(/```json\n([\s\S]*?)\n```/);
-                    if (!match) return;
+                    if (!match) continue;
                     try {
                         var data = JSON.parse(match[1]);
                         data.issueNumber = issue.number;
                         data.issueUrl = issue.html_url;
                         data.issueState = issue.state;
                         if (!data.status) data.status = issue.state === 'closed' ? 'resolved' : 'open';
+                        data.replies = data.replies || [];
                         githubAnns.push(data);
                     } catch (e) {}
-                });
-                // Load replies from GitHub comments
-                for (var i = 0; i < githubAnns.length; i++) {
-                    if (githubAnns[i].issueNumber) {
+                }
+                for (var j = 0; j < githubAnns.length; j++) {
+                    if (githubAnns[j].issueNumber) {
                         try {
-                            var comments = await API.getIssueComments(githubAnns[i].issueNumber);
-                            githubAnns[i].replies = comments.map(function(c) {
-                                return { reviewer: c.user.login, text: c.body, timestamp: c.created_at };
-                            });
+                            var comments = await API.getIssueComments(githubAnns[j].issueNumber);
+                            githubAnns[j].replies = [];
+                            for (var k = 0; k < comments.length; k++) {
+                                githubAnns[j].replies.push({
+                                    reviewer: comments[k].user.login,
+                                    text: comments[k].body,
+                                    timestamp: comments[k].created_at
+                                });
+                            }
                         } catch (e) {}
                     }
                 }
                 var localAnns = annotations[pdfName] || [];
                 var merged = [];
                 var seen = {};
-                githubAnns.forEach(function(a) { merged.push(a); if (a.issueNumber) seen[a.issueNumber] = true; });
-                localAnns.forEach(function(a) {
-                    if (!a.issueNumber || !seen[a.issueNumber]) {
+                for (var m = 0; m < githubAnns.length; m++) {
+                    merged.push(githubAnns[m]);
+                    if (githubAnns[m].issueNumber) seen[githubAnns[m].issueNumber] = true;
+                }
+                for (var n = 0; n < localAnns.length; n++) {
+                    if (!localAnns[n].issueNumber || !seen[localAnns[n].issueNumber]) {
                         var dup = false;
-                        for (var j = 0; j < merged.length; j++) {
-                            if (merged[j].timestamp === a.timestamp && merged[j].page === a.page && merged[j].type === a.type) { dup = true; break; }
+                        for (var p = 0; p < merged.length; p++) {
+                            if (merged[p].timestamp === localAnns[n].timestamp && merged[p].page === localAnns[n].page && merged[p].type === localAnns[n].type) {
+                                dup = true; break;
+                            }
                         }
-                        if (!dup) merged.push(a);
+                        if (!dup) merged.push(localAnns[n]);
                     }
-                });
-                annotations[pdfName] = merged; saveLocal();
+                }
+                annotations[pdfName] = merged;
+                saveLocal();
                 return githubAnns.length;
-            } catch (err) { console.warn('Load from GitHub failed:', err.message); return 0; }
+            } catch (err) {
+                console.warn('Load from GitHub failed:', err.message);
+                return 0;
+            }
         },
-        dispose: dispose, restoreAnnotations: restoreAnnotations,
-        addAnnotation: addAnnotation, deleteAnnotation: deleteAnnotation,
+        dispose: dispose,
+        restoreAnnotations: restoreAnnotations,
+        addAnnotation: addAnnotation,
+        deleteAnnotation: deleteAnnotation,
         updateAnnotationStatus: updateAnnotationStatus,
         addReply: addReply,
         navigateAnnotations: navigateAnnotations,
