@@ -7,7 +7,6 @@ var Annotations = (function() {
     var isDrawingRect = false;
     var rectStart = null;
     var tempRect = null;
-    var currentAnnotationIndex = -1;
 
     function getEl(id) { return document.getElementById(id); }
 
@@ -38,14 +37,14 @@ var Annotations = (function() {
         return 'ann-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
     }
 
-    // Sync
+    // ---- SYNC ----
     async function syncToGitHub() {
         var pdfName = App.getCurrentPDFName();
         if (!pdfName) return { synced: 0, updated: 0 };
         var anns = getAnnotations();
         var synced = 0;
         var updated = 0;
-        for (var i = 0; i < anns.length; i++) {
+        for (var i = 0; i < anns.length; i = i + 1) {
             var ann = anns[i];
             try {
                 if (ann.issueNumber) {
@@ -67,14 +66,14 @@ var Annotations = (function() {
         return { synced: synced, updated: updated };
     }
 
-    // Add annotation
+    // ---- ADD ANNOTATION ----
     function addAnnotation(ann) {
         var anns = getAnnotations();
         ann.id = makeId();
         ann.reviewer = getReviewer();
         ann.timestamp = new Date().toISOString();
-        ann.status = ann.status || 'open';
-        ann.replies = ann.replies || [];
+        ann.status = 'open';
+        ann.replies = [];
         anns.push(ann);
         setAnnotations(anns);
         saveLocal();
@@ -89,7 +88,7 @@ var Annotations = (function() {
         }).catch(function() {});
     }
 
-    // Update status
+    // ---- UPDATE STATUS ----
     function updateStatus(index, newStatus) {
         var anns = getAnnotations();
         if (index < 0 || index >= anns.length) return;
@@ -102,7 +101,7 @@ var Annotations = (function() {
         Sidebar.render(getAnnotations());
     }
 
-    // Add reply
+    // ---- ADD REPLY ----
     function addReply(index, replyText) {
         var anns = getAnnotations();
         if (index < 0 || index >= anns.length) return;
@@ -123,7 +122,7 @@ var Annotations = (function() {
         Sidebar.render(getAnnotations());
     }
 
-    // Delete
+    // ---- DELETE ----
     function deleteAnnotation(index) {
         var anns = getAnnotations();
         var ann = anns[index];
@@ -131,7 +130,7 @@ var Annotations = (function() {
         if (ann.issueNumber) {
             API.closeAnnotationIssue(ann.issueNumber).catch(function() {});
         }
-        if (ann.page && (ann.type === 'drawing' || ann.type === 'rectangle' || ann.type === 'comment')) {
+        if (ann.page) {
             var fc = fabricCanvases[ann.page];
             if (fc) { fc.clear(); fc.renderAll(); }
         }
@@ -141,14 +140,20 @@ var Annotations = (function() {
         Sidebar.render(getAnnotations());
     }
 
-    // Tools
+    // ---- TOOLS ----
     function setTool(tool) {
         currentTool = tool;
-        document.querySelectorAll('[data-tool]').forEach(function(b) { b.classList.remove('tool-active'); });
+        var buttons = document.querySelectorAll('[data-tool]');
+        for (var i = 0; i < buttons.length; i = i + 1) {
+            buttons[i].classList.remove('tool-active');
+        }
         var btn = document.querySelector('[data-tool="' + tool + '"]');
         if (btn) btn.classList.add('tool-active');
-        Object.values(fabricCanvases).forEach(function(fc) {
-            if (!fc || !fc.lowerCanvasEl) return;
+
+        var keys = Object.keys(fabricCanvases);
+        for (var j = 0; j < keys.length; j = j + 1) {
+            var fc = fabricCanvases[keys[j]];
+            if (!fc || !fc.lowerCanvasEl) continue;
             var el = fc.lowerCanvasEl;
             if (tool === 'select') {
                 el.style.pointerEvents = 'none';
@@ -170,31 +175,40 @@ var Annotations = (function() {
                 fc.selection = false;
             }
             fc.renderAll();
-        });
+        }
     }
 
     function setColor(color) {
         currentColor = color;
-        document.querySelectorAll('.color-btn').forEach(function(b) { b.classList.remove('selected'); });
+        var buttons = document.querySelectorAll('.color-btn');
+        for (var i = 0; i < buttons.length; i = i + 1) {
+            buttons[i].classList.remove('selected');
+        }
         var btn = document.querySelector('[data-color="' + color + '"]');
         if (btn) btn.classList.add('selected');
         if (currentTool === 'draw') {
-            Object.values(fabricCanvases).forEach(function(fc) {
+            var keys = Object.keys(fabricCanvases);
+            for (var j = 0; j < keys.length; j = j + 1) {
+                var fc = fabricCanvases[keys[j]];
                 if (fc) fc.freeDrawingBrush.color = color.replace(/[\d.]+\)$/, '1)');
-            });
+            }
         }
     }
 
-    // Fabric canvas
+    // ---- FABRIC CANVAS ----
     function createFabricCanvas(pageNum, canvasEl) {
-        var fc = new fabric.Canvas(canvasEl, { selection: false, isDrawingMode: false, renderOnAddRemove: true });
+        var fc = new fabric.Canvas(canvasEl, {
+            selection: false,
+            isDrawingMode: false,
+            renderOnAddRemove: true
+        });
         fc.lowerCanvasEl.style.pointerEvents = 'none';
         fc.on('object:modified', function() { saveDrawings(pageNum); });
         fc.on('path:created', function() {
             saveDrawings(pageNum);
             var anns = getAnnotations();
             var drawAnn = null;
-            for (var j = 0; j < anns.length; j++) {
+            for (var j = 0; j < anns.length; j = j + 1) {
                 if (anns[j].type === 'drawing' && anns[j].page === pageNum && !anns[j]._prompted) {
                     drawAnn = anns[j];
                     break;
@@ -206,7 +220,7 @@ var Annotations = (function() {
                 saveLocal();
                 showCommentModal('Drawing on page ' + pageNum, function(comment) {
                     var cur = getAnnotations();
-                    for (var k = 0; k < cur.length; k++) {
+                    for (var k = 0; k < cur.length; k = k + 1) {
                         if (cur[k].type === 'drawing' && cur[k].page === pageNum && cur[k]._prompted) {
                             cur[k].comment = comment || '';
                             delete cur[k]._prompted;
@@ -227,7 +241,7 @@ var Annotations = (function() {
         pageContainers[pageNum] = container;
     }
 
-    // Highlight
+    // ---- HIGHLIGHT ----
     function handleHighlight(pageNum) {
         if (currentTool !== 'highlight') return;
         var sel = window.getSelection();
@@ -240,7 +254,8 @@ var Annotations = (function() {
         var cr = container.getBoundingClientRect();
         var fc = fabricCanvases[pageNum];
         if (!fc) return;
-        for (var i = 0; i < rects.length; i++) {
+
+        for (var i = 0; i < rects.length; i = i + 1) {
             var r = rects[i];
             fc.add(new fabric.Rect({
                 left: r.left - cr.left,
@@ -254,6 +269,7 @@ var Annotations = (function() {
             }));
         }
         fc.renderAll();
+
         var preview = text;
         if (preview.length > 80) preview = preview.substring(0, 80) + '...';
         showCommentModal('Highlight on page ' + pageNum + ': "' + preview + '"', function(comment) {
@@ -268,7 +284,7 @@ var Annotations = (function() {
         });
     }
 
-    // Sticky note
+    // ---- STICKY NOTE ----
     function handleSticky(e, pageNum) {
         if (currentTool !== 'comment') return;
         var container = pageContainers[pageNum];
@@ -303,7 +319,7 @@ var Annotations = (function() {
         });
     }
 
-    // Rectangle
+    // ---- RECTANGLE ----
     function handleRectDown(e) {
         if (currentTool !== 'rectangle') return;
         var target = e.target.closest('.page-wrapper');
@@ -364,7 +380,7 @@ var Annotations = (function() {
                     showCommentModal('Rectangle on page ' + pageNum, function(comment) {
                         saveDrawings(pageNum);
                         var anns = getAnnotations();
-                        for (var j = 0; j < anns.length; j++) {
+                        for (var j = 0; j < anns.length; j = j + 1) {
                             if (anns[j].type === 'drawing' && anns[j].page === pageNum) {
                                 anns[j].comment = comment || '';
                                 break;
@@ -386,12 +402,21 @@ var Annotations = (function() {
     function saveDrawings(pageNum) {
         var fc = fabricCanvases[pageNum];
         if (!fc) return;
-        var objects = fc.getObjects().map(function(o) { return o.toJSON(); });
-        var anns = getAnnotations().filter(function(a) {
-            return !((a.type === 'drawing' || a.type === 'rectangle') && a.page === pageNum);
-        });
+        var objects = [];
+        var fcObjects = fc.getObjects();
+        for (var i = 0; i < fcObjects.length; i = i + 1) {
+            objects.push(fcObjects[i].toJSON());
+        }
+        var anns = getAnnotations();
+        var filtered = [];
+        for (var j = 0; j < anns.length; j = j + 1) {
+            var a = anns[j];
+            if (!((a.type === 'drawing' || a.type === 'rectangle') && a.page === pageNum)) {
+                filtered.push(a);
+            }
+        }
         if (objects.length > 0) {
-            anns.push({
+            filtered.push({
                 type: 'drawing',
                 page: pageNum,
                 objects: objects,
@@ -400,20 +425,23 @@ var Annotations = (function() {
                 timestamp: new Date().toISOString()
             });
         }
-        setAnnotations(anns);
+        setAnnotations(filtered);
         saveLocal();
         Sidebar.render(getAnnotations());
     }
 
+    // ---- UNDO / CLEAR ----
     function undo() {
         var cr = getEl('pdf-scroll-container').getBoundingClientRect();
         var best = null;
         var bestO = 0;
-        Object.entries(pageContainers).forEach(function(e) {
-            var r = e[1].getBoundingClientRect();
+        var keys = Object.keys(pageContainers);
+        for (var i = 0; i < keys.length; i = i + 1) {
+            var el = pageContainers[keys[i]];
+            var r = el.getBoundingClientRect();
             var o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top));
-            if (o > bestO) { bestO = o; best = parseInt(e[0]); }
-        });
+            if (o > bestO) { bestO = o; best = parseInt(keys[i]); }
+        }
         if (!best) return;
         var fc = fabricCanvases[best];
         if (!fc) return;
@@ -428,36 +456,46 @@ var Annotations = (function() {
         var cr = getEl('pdf-scroll-container').getBoundingClientRect();
         var best = null;
         var bestO = 0;
-        Object.entries(pageContainers).forEach(function(e) {
-            var r = e[1].getBoundingClientRect();
+        var keys = Object.keys(pageContainers);
+        for (var i = 0; i < keys.length; i = i + 1) {
+            var el = pageContainers[keys[i]];
+            var r = el.getBoundingClientRect();
             var o = Math.max(0, Math.min(r.bottom, cr.bottom) - Math.max(r.top, cr.top));
-            if (o > bestO) { bestO = o; best = parseInt(e[0]); }
-        });
+            if (o > bestO) { bestO = o; best = parseInt(keys[i]); }
+        }
         if (!best) return;
         var fc = fabricCanvases[best];
         if (!fc) return;
         fc.clear();
         fc.renderAll();
-        var anns = getAnnotations().filter(function(a) { return a.page !== best; });
-        setAnnotations(anns);
+        var anns = getAnnotations();
+        var filtered = [];
+        for (var j = 0; j < anns.length; j = j + 1) {
+            if (anns[j].page !== best) filtered.push(anns[j]);
+        }
+        setAnnotations(filtered);
         saveLocal();
         Sidebar.render(getAnnotations());
     }
 
     function dispose() {
-        Object.values(fabricCanvases).forEach(function(fc) {
-            try { fc.dispose(); } catch (e) {}
-        });
+        var keys = Object.keys(fabricCanvases);
+        for (var i = 0; i < keys.length; i = i + 1) {
+            try { fabricCanvases[keys[i]].dispose(); } catch (e) {}
+        }
         fabricCanvases = {};
         pageContainers = {};
     }
 
     function restoreAnnotations() {
         var anns = getAnnotations();
-        anns.forEach(function(ann) {
+        for (var i = 0; i < anns.length; i = i + 1) {
+            var ann = anns[i];
             if ((ann.type === 'drawing' || ann.type === 'rectangle') && ann.objects && fabricCanvases[ann.page]) {
                 fabric.util.enlivenObjects(ann.objects, function(objects) {
-                    objects.forEach(function(o) { fabricCanvases[ann.page].add(o); });
+                    for (var j = 0; j < objects.length; j = j + 1) {
+                        fabricCanvases[ann.page].add(objects[j]);
+                    }
                     fabricCanvases[ann.page].renderAll();
                 });
             }
@@ -476,33 +514,14 @@ var Annotations = (function() {
                 fabricCanvases[ann.page].add(rect);
                 fabricCanvases[ann.page].renderAll();
             }
-        });
-    }
-
-    function navigateAnnotations(direction) {
-        var filtered = Sidebar.getFilteredAnnotations();
-        if (!filtered.length) return;
-        if (currentAnnotationIndex < 0) currentAnnotationIndex = 0;
-        currentAnnotationIndex = currentAnnotationIndex + direction;
-        if (currentAnnotationIndex < 0) currentAnnotationIndex = filtered.length - 1;
-        if (currentAnnotationIndex >= filtered.length) currentAnnotationIndex = 0;
-        var ann = filtered[currentAnnotationIndex];
-        if (ann && ann.page) {
-            var c = pageContainers[ann.page];
-            if (c) {
-                c.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                c.style.boxShadow = '0 0 0 4px oklch(var(--p))';
-                setTimeout(function() { c.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)'; }, 2000);
-            }
         }
-        Sidebar.highlightAnnotation(currentAnnotationIndex);
     }
 
-    // Export
+    // ---- EXPORT ----
     function exportCSV() {
         var anns = getAnnotations();
         var csv = 'Page,Type,Reviewer,Status,Comment,Date\n';
-        for (var i = 0; i < anns.length; i++) {
+        for (var i = 0; i < anns.length; i = i + 1) {
             var a = anns[i];
             var comment = (a.comment || '').replace(/"/g, '""');
             csv = csv + a.page + ',' + a.type + ',' + (a.reviewer || '') + ',' + (a.status || 'open') + ',"' + comment + '",' + a.timestamp + '\n';
@@ -527,18 +546,15 @@ var Annotations = (function() {
         doc.text('Exported: ' + new Date().toLocaleString(), 14, 36);
         doc.text('Total: ' + anns.length, 14, 42);
         var y = 52;
-        for (var i = 0; i < anns.length; i++) {
+        for (var i = 0; i < anns.length; i = i + 1) {
             var a = anns[i];
             if (y > 270) { doc.addPage(); y = 20; }
             doc.setFontSize(11);
             doc.text('#' + (i + 1) + ' Page ' + a.page + ' - ' + a.type + ' [' + (a.status || 'open') + ']', 14, y);
             y = y + 7;
             doc.setFontSize(9);
-            if (a.comment) { doc.text('Comment: ' + a.comment, 20, y); y = y + 6; }
-            if (a.quotedText) {
-                var qt = a.quotedText;
-                if (qt.length > 100) qt = qt.substring(0, 100);
-                doc.text('Quoted: ' + qt, 20, y);
+            if (a.comment) {
+                doc.text('Comment: ' + a.comment, 20, y);
                 y = y + 6;
             }
             doc.text('By: ' + (a.reviewer || 'Unknown') + ' on ' + new Date(a.timestamp).toLocaleString(), 20, y);
@@ -548,19 +564,18 @@ var Annotations = (function() {
         UI.showToast('PDF report exported', 'success');
     }
 
-    // Comment modal (exposed globally)
+    // ---- COMMENT MODAL ----
     window.showCommentModal = function(context, callback) {
         var modal = document.getElementById('comment-modal');
-        var title = document.getElementById('modal-title');
         var ctx = document.getElementById('modal-context');
         var txt = document.getElementById('modal-comment');
         var saveBtn = document.getElementById('modal-save');
         var cancelBtn = document.getElementById('modal-cancel');
+
         if (!modal || !ctx || !txt || !saveBtn || !cancelBtn) {
             if (callback) callback('');
             return;
         }
-        if (title) title.textContent = 'Add Comment';
         ctx.textContent = context;
         txt.value = '';
         modal.showModal();
@@ -583,13 +598,16 @@ var Annotations = (function() {
         cancelBtn.addEventListener('click', onCancel);
     };
 
-    // Wire toolbar
-    document.querySelectorAll('[data-tool]').forEach(function(b) {
-        b.onclick = function() { setTool(b.dataset.tool); };
-    });
-    document.querySelectorAll('.color-btn').forEach(function(b) {
-        b.onclick = function() { setColor(b.dataset.color); };
-    });
+    // ---- WIRE EVENTS ----
+    var toolButtons = document.querySelectorAll('[data-tool]');
+    for (var t = 0; t < toolButtons.length; t = t + 1) {
+        toolButtons[t].onclick = function() { setTool(this.dataset.tool); };
+    }
+
+    var colorButtons = document.querySelectorAll('.color-btn');
+    for (var c = 0; c < colorButtons.length; c = c + 1) {
+        colorButtons[c].onclick = function() { setColor(this.dataset.color); };
+    }
 
     var scrollEl = getEl('pdf-scroll-container');
     if (scrollEl) {
@@ -646,7 +664,7 @@ var Annotations = (function() {
         };
     }
 
-    // Return public API
+    // ---- PUBLIC API ----
     return {
         setTool: setTool,
         setColor: setColor,
@@ -662,7 +680,7 @@ var Annotations = (function() {
             try {
                 var issues = await API.fetchIssuesForPDF(pdfName);
                 var githubAnns = [];
-                for (var i = 0; i < issues.length; i++) {
+                for (var i = 0; i < issues.length; i = i + 1) {
                     var issue = issues[i];
                     var match = issue.body.match(/```json\n([\s\S]*?)\n```/);
                     if (!match) continue;
@@ -671,7 +689,8 @@ var Annotations = (function() {
                         data.issueNumber = issue.number;
                         data.issueUrl = issue.html_url;
                         data.issueState = issue.state;
-                        if (!data.status) data.status = issue.state === 'closed' ? 'resolved' : 'open';
+                        if (!data.status) data.status = 'open';
+                        if (issue.state === 'closed') data.status = 'resolved';
                         data.replies = data.replies || [];
                         githubAnns.push(data);
                     } catch (e) {}
@@ -679,20 +698,21 @@ var Annotations = (function() {
                 var localAnns = annotations[pdfName] || [];
                 var merged = [];
                 var seen = {};
-                for (var j = 0; j < githubAnns.length; j++) {
+                for (var j = 0; j < githubAnns.length; j = j + 1) {
                     merged.push(githubAnns[j]);
                     if (githubAnns[j].issueNumber) seen[githubAnns[j].issueNumber] = true;
                 }
-                for (var k = 0; k < localAnns.length; k++) {
-                    if (!localAnns[k].issueNumber || !seen[localAnns[k].issueNumber]) {
+                for (var k = 0; k < localAnns.length; k = k + 1) {
+                    var local = localAnns[k];
+                    if (!local.issueNumber || !seen[local.issueNumber]) {
                         var dup = false;
-                        for (var m = 0; m < merged.length; m++) {
-                            if (merged[m].timestamp === localAnns[k].timestamp && merged[m].page === localAnns[k].page && merged[m].type === localAnns[k].type) {
+                        for (var m = 0; m < merged.length; m = m + 1) {
+                            if (merged[m].timestamp === local.timestamp && merged[m].page === local.page && merged[m].type === local.type) {
                                 dup = true;
                                 break;
                             }
                         }
-                        if (!dup) merged.push(localAnns[k]);
+                        if (!dup) merged.push(local);
                     }
                 }
                 annotations[pdfName] = merged;
@@ -709,14 +729,10 @@ var Annotations = (function() {
         deleteAnnotation: deleteAnnotation,
         updateAnnotationStatus: updateStatus,
         addReply: addReply,
-        navigateAnnotations: navigateAnnotations,
-        getCurrentTool: function() { return currentTool; },
         scrollToPage: function(pageNum) {
             var c = pageContainers[pageNum];
             if (c) {
                 c.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                c.style.boxShadow = '0 0 0 4px oklch(var(--p))';
-                setTimeout(function() { c.style.boxShadow = '0 4px 16px rgba(0,0,0,0.6)'; }, 1500);
             }
         }
     };
