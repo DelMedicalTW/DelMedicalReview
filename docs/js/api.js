@@ -16,42 +16,6 @@ var API = (function() {
         return resp.json();
     }
 
-    function getIssueLabel(pdfName) {
-        var safe = pdfName.replace(/[^a-zA-Z0-9_-]/g, '-');
-        safe = safe.replace(/-+/g, '-');
-        safe = safe.replace(/^-+|-+$/g, '');
-        if (safe.length > 50) { safe = safe.substring(0, 50); }
-        if (!safe) { safe = 'pdf-review'; }
-        return ISSUE_LABEL_PREFIX + ':' + safe;
-    }
-
-    // Search for issues by searching the body for our marker + PDF name
-    async function searchIssuesForPDF(pdfName) {
-        var allIssues = [];
-        var page = 1;
-        // Use GitHub search API to find issues with our marker
-        var query = 'repo:' + OWNER + '/' + REPO + ' "<!-- delmed-pdf-annotation -->" in:body type:issue state:all';
-        while (true) {
-            var searchUrl = '/search/issues?q=' + encodeURIComponent(query) + '&per_page=100&page=' + page;
-            try {
-                var result = await githubAPI(searchUrl);
-                if (!result.items || !result.items.length) break;
-                // Filter by PDF name in the body
-                var matching = result.items.filter(function(issue) {
-                    return issue.body && issue.body.indexOf(pdfName) !== -1;
-                });
-                allIssues = allIssues.concat(matching);
-                if (result.items.length < 100) break;
-                page++;
-            } catch (e) {
-                // Search API might not be available, fall back to empty
-                console.warn('Search API failed:', e.message);
-                break;
-            }
-        }
-        return allIssues;
-    }
-
     return {
         fetchContents: function(path) {
             return githubAPI('/contents/' + path);
@@ -64,28 +28,31 @@ var API = (function() {
         },
 
         fetchIssuesForPDF: async function(pdfName) {
-            // Try search API first, fall back to label-based lookup
-            var issues = await searchIssuesForPDF(pdfName);
-            if (issues.length > 0) return issues;
-
-            // Fallback: try label-based lookup
-            var label = getIssueLabel(pdfName);
+            // Fetch ALL issues with pagination, filter by our marker + PDF name
             var allIssues = [];
             var page = 1;
-            while (true) {
+            while (page <= 10) { // Safety limit
                 try {
-                    var batch = await githubAPI('/issues?labels=' + encodeURIComponent(label) + '&state=all&per_page=100&page=' + page);
-                    if (!batch.length) break;
-                    allIssues = allIssues.concat(batch);
+                    var batch = await githubAPI('/issues?state=all&per_page=100&page=' + page + '&sort=updated&direction=desc');
+                    if (!batch || !batch.length) break;
+                    
+                    var matching = batch.filter(function(issue) {
+                        if (!issue.body) return false;
+                        if (issue.body.indexOf('<!-- delmed-pdf-annotation -->') === -1) return false;
+                        // Check if this issue is for our PDF
+                        return issue.body.indexOf('**PDF:** ' + pdfName) !== -1 ||
+                               issue.body.indexOf(pdfName) !== -1;
+                    });
+                    
+                    allIssues = allIssues.concat(matching);
+                    if (batch.length < 100) break;
                     page++;
                 } catch (e) {
-                    // Label might not exist, which is fine
+                    console.warn('Issue fetch failed on page ' + page + ':', e.message);
                     break;
                 }
             }
-            return allIssues.filter(function(issue) {
-                return issue.body && issue.body.indexOf('<!-- delmed-pdf-annotation -->') !== -1;
-            });
+            return allIssues;
         },
 
         createAnnotationIssue: async function(pdfName, annotationData) {
@@ -104,27 +71,19 @@ var API = (function() {
             body = body + '| **Type** | ' + annotationData.type + ' |\n';
             body = body + '| **Reviewer** | ' + (annotationData.reviewer || 'Unknown') + ' |\n';
             body = body + '| **Date** | ' + annotationData.timestamp + ' |\n';
-            body = body + '| **Color** | ' + (annotationData.color || 'default') + ' |\n\n';
-            body = body + '**Comment:** ' + (annotationData.comment || 'No comment') + '\n';
+            body = body + '| **Color** | ' + (annotationData.color || 'default') + ' |\n';
+            body = body + '| **Status** | ' + (annotationData.status || 'open') + ' |\n';
+            body = body + '\n**Comment:** ' + (annotationData.comment || 'No comment') + '\n';
             if (annotationData.quotedText) {
                 body = body + '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n';
             }
             body = body + '\n```json\n' + JSON.stringify(annotationData, null, 2) + '\n```\n';
 
-            // Try creating with label first, fall back to no label
-            var label = getIssueLabel(pdfName);
-            try {
-                return await githubAPI('/issues', {
-                    method: 'POST',
-                    body: JSON.stringify({ title: title, body: body, labels: [label] })
-                });
-            } catch (e) {
-                // If label doesn't exist, create without it
-                return await githubAPI('/issues', {
-                    method: 'POST',
-                    body: JSON.stringify({ title: title, body: body })
-                });
-            }
+            // Create without label to avoid 422 errors
+            return githubAPI('/issues', {
+                method: 'POST',
+                body: JSON.stringify({ title: title, body: body })
+            });
         },
 
         updateAnnotationIssue: async function(issueNumber, annotationData) {
@@ -135,8 +94,9 @@ var API = (function() {
             body = body + '| **Type** | ' + annotationData.type + ' |\n';
             body = body + '| **Reviewer** | ' + (annotationData.reviewer || 'Unknown') + ' |\n';
             body = body + '| **Date** | ' + annotationData.timestamp + ' |\n';
-            body = body + '| **Color** | ' + (annotationData.color || 'default') + ' |\n\n';
-            body = body + '**Comment:** ' + (annotationData.comment || 'No comment') + '\n';
+            body = body + '| **Color** | ' + (annotationData.color || 'default') + ' |\n';
+            body = body + '| **Status** | ' + (annotationData.status || 'open') + ' |\n';
+            body = body + '\n**Comment:** ' + (annotationData.comment || 'No comment') + '\n';
             if (annotationData.quotedText) {
                 body = body + '\n**Quoted Text:**\n> ' + annotationData.quotedText + '\n';
             }
@@ -152,6 +112,19 @@ var API = (function() {
                 method: 'PATCH',
                 body: JSON.stringify({ state: 'closed' })
             });
+        },
+
+        // Add reply to existing issue
+        addIssueComment: async function(issueNumber, commentBody) {
+            return githubAPI('/issues/' + issueNumber + '/comments', {
+                method: 'POST',
+                body: JSON.stringify({ body: commentBody })
+            });
+        },
+
+        // Get comments on an issue (replies)
+        getIssueComments: async function(issueNumber) {
+            return githubAPI('/issues/' + issueNumber + '/comments');
         }
     };
 })();
