@@ -7,17 +7,17 @@ var Browser = (function() {
 
     function getFolderInfo(path) {
         var lower = (path || '').toLowerCase();
-        if (lower.indexOf('staging') !== -1) { return { label: 'STAGING', cls: 'badge-warning', icon: 'package-open', desc: 'Pre-release preparation' }; }
-        if (lower.indexOf('draft') !== -1) { return { label: 'DRAFTS', cls: 'badge-error', icon: 'pencil', desc: 'Work in progress' }; }
-        if (lower.indexOf('archive') !== -1) { return { label: 'ARCHIVE', cls: 'badge-ghost', icon: 'archive', desc: 'Historical documents' }; }
-        if (lower.indexOf('service') !== -1) { return { label: 'SERVICE', cls: 'badge-info', icon: 'wrench', desc: 'Service documentation' }; }
-        if (lower.indexOf('user') !== -1) { return { label: 'USER', cls: 'badge-success', icon: 'users', desc: 'User documentation' }; }
+        if (lower.indexOf('staging') !== -1) return { label: 'STAGING', cls: 'badge-warning', icon: 'package-open', desc: 'Pre-release preparation' };
+        if (lower.indexOf('draft') !== -1) return { label: 'DRAFTS', cls: 'badge-error', icon: 'pencil', desc: 'Work in progress' };
+        if (lower.indexOf('archive') !== -1) return { label: 'ARCHIVE', cls: 'badge-ghost', icon: 'archive', desc: 'Historical documents' };
+        if (lower.indexOf('service') !== -1) return { label: 'SERVICE', cls: 'badge-info', icon: 'wrench', desc: 'Service documentation' };
+        if (lower.indexOf('user') !== -1) return { label: 'USER', cls: 'badge-success', icon: 'users', desc: 'User documentation' };
         return null;
     }
 
     async function loadDir(path) {
         var fl = $('file-list');
-        if (!fl) { return; }
+        if (!fl) return;
         fl.innerHTML = '<div class="text-center py-8 text-base-content/50 text-sm"><span class="loading loading-spinner loading-sm"></span> Loading...</div>';
         currentPath = path;
         try {
@@ -33,13 +33,13 @@ var Browser = (function() {
             if (fi) {
                 h = h + '<div class="px-3 py-2 bg-base-300/50 border-b border-base-300">';
                 h = h + '<div class="flex items-center gap-2">';
-                h = h + '<span class="badge ' + fi.cls + ' badge-sm gap-1"><i data-lucide="' + fi.icon + '" class="w-3 h-3"></i> ' + fi.label + '</span>';
-                h = h + '<span class="text-xs text-base-content/60">' + fi.desc + '</span>';
+                h = h + '<span class="badge ' + fi.cls + ' badge-lg gap-1"><i data-lucide="' + fi.icon + '" class="w-4 h-4"></i> ' + fi.label + '</span>';
+                h = h + '<span class="text-sm text-base-content/60 font-medium">' + fi.desc + '</span>';
                 h = h + '</div></div>';
             }
             folders.forEach(function(f) {
                 var ffi = getFolderInfo(f.path);
-                var badge = ffi ? '<span class="badge ' + ffi.cls + ' badge-xs ml-auto flex-shrink-0">' + ffi.label + '</span>' : '';
+                var badge = ffi ? '<span class="badge ' + ffi.cls + ' badge-lg ml-auto flex-shrink-0 font-semibold">' + ffi.label + '</span>' : '';
                 h = h + '<div class="file-row flex items-center gap-2 px-3 py-2 cursor-pointer text-sm select-none" data-path="' + esc(f.path) + '">';
                 h = h + '<i data-lucide="folder" class="w-4 h-4 flex-shrink-0 text-warning"></i>';
                 h = h + '<span class="truncate">' + esc(f.name) + '</span>' + badge + '</div>';
@@ -49,9 +49,9 @@ var Browser = (function() {
                 var pfi = getFolderInfo(currentPath);
                 var badgeHtml = '';
                 if (draft) {
-                    badgeHtml = '<span class="badge badge-error badge-xs ml-auto flex-shrink-0">DRAFT</span>';
+                    badgeHtml = '<span class="badge badge-error badge-lg ml-auto flex-shrink-0 font-semibold">DRAFT</span>';
                 } else if (pfi) {
-                    badgeHtml = '<span class="badge ' + pfi.cls + ' badge-xs ml-auto flex-shrink-0">' + pfi.label + '</span>';
+                    badgeHtml = '<span class="badge ' + pfi.cls + ' badge-lg ml-auto flex-shrink-0 font-semibold">' + pfi.label + '</span>';
                 }
                 var active = '';
                 if (App && App.getCurrentPDFName && App.getCurrentPDFName() === p.name) {
@@ -68,11 +68,11 @@ var Browser = (function() {
             });
             fl.querySelectorAll('.file-row[data-name]').forEach(function(el) {
                 el.onclick = function() {
-                    if (App && App.loadPDF) { App.loadPDF(el.dataset.path, el.dataset.name); }
+                    if (App && App.loadPDF) App.loadPDF(el.dataset.path, el.dataset.name);
                 };
             });
             var backBtn = $('back-btn');
-            if (backBtn) { backBtn.disabled = !path; }
+            if (backBtn) backBtn.disabled = !path;
         } catch (err) {
             fl.innerHTML = '<div class="text-center py-8 text-error text-sm"><i data-lucide="alert-triangle" class="w-6 h-6 mx-auto mb-1"></i>' + esc(err.message) + '</div>';
             lucide.createIcons();
@@ -81,20 +81,19 @@ var Browser = (function() {
 
     function highlightFile(name) {
         var fl = $('file-list');
-        if (!fl) { return; }
+        if (!fl) return;
         fl.querySelectorAll('.active-file').forEach(function(el) { el.classList.remove('active-file'); });
         var el = fl.querySelector('[data-name="' + name + '"]');
-        if (el) { el.classList.add('active-file'); }
+        if (el) el.classList.add('active-file');
     }
 
-    // Event wiring
     $('back-btn').onclick = function() {
-        if (currentPath) { loadDir(currentPath.split('/').slice(0, -1).join('/') || ''); }
+        if (currentPath) loadDir(currentPath.split('/').slice(0, -1).join('/') || '');
     };
     $('search-input').oninput = function(e) {
         var q = e.target.value.toLowerCase();
         var fl = $('file-list');
-        if (!fl) { return; }
+        if (!fl) return;
         fl.querySelectorAll('.file-row').forEach(function(el) {
             var span = el.querySelector('.truncate');
             var name = span ? span.textContent : '';
