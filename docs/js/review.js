@@ -5,57 +5,61 @@ var App = (function() {
     function $(id) { return document.getElementById(id); }
 
     async function loadPDF(contentsPath, name) {
-        if (isLoadingPDF) { return; }
+        if (isLoadingPDF) return;
         isLoadingPDF = true;
         currentPDFName = name;
         Browser.highlightFile(name);
 
         var pdfNameEl = $('current-pdf-name');
-        if (pdfNameEl) { pdfNameEl.textContent = name; }
+        if (pdfNameEl) pdfNameEl.textContent = name;
 
-        // Load from storage
         Annotations.loadLocal();
         Sidebar.render(Annotations.getAnnotations());
 
-        // Load from GitHub in background
-        var syncBadge = $('sync-badge');
-        var syncLabel = $('sync-label');
-        if (syncBadge) { syncBadge.className = 'badge badge-sm badge-info gap-1'; }
-        if (syncLabel) { syncLabel.textContent = 'Loading...'; }
+        var syncBadge = $('sync-badge'), syncLabel = $('sync-label');
+        if (syncBadge) syncBadge.className = 'badge badge-sm badge-info gap-1';
+        if (syncLabel) syncLabel.textContent = 'Loading...';
         var count = await Annotations.loadFromGitHub(name);
         Sidebar.render(Annotations.getAnnotations());
-        if (syncBadge) { syncBadge.className = 'badge badge-sm badge-ghost gap-1'; }
-        if (syncLabel) { syncLabel.textContent = 'GitHub'; }
+        if (syncBadge) syncBadge.className = 'badge badge-sm badge-ghost gap-1';
+        if (syncLabel) syncLabel.textContent = 'GitHub';
 
         await PDFViewer.loadPDF(contentsPath, name);
         isLoadingPDF = false;
     }
 
-    function getCurrentPDFName() {
-        return currentPDFName;
-    }
+    function getCurrentPDFName() { return currentPDFName; }
 
     // Panel toggles
-    $('toggle-browser').onclick = function() {
-        var p = $('browser-panel');
-        if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); }
-    };
-    $('toggle-annotations').onclick = function() {
-        var p = $('annotation-sidebar');
-        if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); }
-    };
+    $('toggle-browser').onclick = function() { var p = $('browser-panel'); if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); } };
+    $('toggle-annotations').onclick = function() { var p = $('annotation-sidebar'); if (p) { p.classList.toggle('!w-0'); p.classList.toggle('!min-w-0'); } };
 
-    // Theme
-    var savedTheme = localStorage.getItem('delmed-theme') || 'dark';
-    document.documentElement.setAttribute('data-theme', savedTheme);
+    // Theme with OS detection
+    function applyTheme(theme) {
+        if (theme === 'auto') {
+            var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+        } else {
+            document.documentElement.setAttribute('data-theme', theme);
+        }
+    }
+
+    var savedTheme = localStorage.getItem('delmed-theme') || 'auto';
+    applyTheme(savedTheme);
+
+    // Listen for OS theme changes
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function() {
+        if (localStorage.getItem('delmed-theme') === 'auto') applyTheme('auto');
+    });
+
     document.querySelectorAll('[data-theme-switch]').forEach(function(el) {
         el.addEventListener('click', function(e) {
             e.preventDefault();
             var theme = el.dataset.themeSwitch;
-            document.documentElement.setAttribute('data-theme', theme);
             localStorage.setItem('delmed-theme', theme);
+            applyTheme(theme);
             var dd = el.closest('.dropdown');
-            if (dd) { var btn = dd.querySelector('button'); if (btn) { btn.blur(); } }
+            if (dd) { var btn = dd.querySelector('button'); if (btn) btn.blur(); }
         });
     });
 
@@ -68,14 +72,16 @@ var App = (function() {
         });
     }
 
-    // Keyboard
+    // Keyboard navigation
     document.addEventListener('keydown', function(e) {
-        if (document.activeElement !== document.body && document.activeElement.tagName !== 'BODY') { return; }
-        if (e.key === 'Escape') { Annotations.setTool('select'); }
-        if (e.key === 'h') { Annotations.setTool('highlight'); }
-        if (e.key === 'd') { Annotations.setTool('draw'); }
-        if (e.key === 'r') { Annotations.setTool('rectangle'); }
-        if (e.key === 'n') { Annotations.setTool('comment'); }
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+        if (e.key === 'Escape') Annotations.setTool('select');
+        if (e.key === 'h') Annotations.setTool('highlight');
+        if (e.key === 'd') Annotations.setTool('draw');
+        if (e.key === 'r') Annotations.setTool('rectangle');
+        if (e.key === 'n') Annotations.setTool('comment');
+        if (e.key === 'j') { e.preventDefault(); Annotations.navigateAnnotations(1); }
+        if (e.key === 'k') { e.preventDefault(); Annotations.navigateAnnotations(-1); }
     });
 
     // Init
@@ -91,7 +97,6 @@ var App = (function() {
     };
 })();
 
-// UI Utilities
 var UI = (function() {
     function showToast(msg, type) {
         var t = document.getElementById('toast');
@@ -99,11 +104,11 @@ var UI = (function() {
         var m = document.getElementById('toast-message');
         var ok = document.getElementById('toast-icon-ok');
         var err = document.getElementById('toast-icon-err');
-        if (!t || !a || !m) { return; }
+        if (!t || !a || !m) return;
         m.textContent = msg;
         a.className = 'alert ' + (type === 'error' ? 'alert-error' : 'alert-success');
-        if (ok) { ok.classList.toggle('hidden', type === 'error'); }
-        if (err) { err.classList.toggle('hidden', type !== 'error'); }
+        if (ok) ok.classList.toggle('hidden', type === 'error');
+        if (err) err.classList.toggle('hidden', type !== 'error');
         t.classList.remove('hidden');
         clearTimeout(t._timer);
         t._timer = setTimeout(function() { t.classList.add('hidden'); }, 3500);
