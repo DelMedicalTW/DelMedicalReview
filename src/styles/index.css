@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.page-wrapper {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
+[data-tool].tool-active,
+.tool-active {
+  background-color: oklch(var(--p)) !important;
+  color: oklch(var(--pc)) !important;
+  font-weight: 600;
+}
+
+.color-btn {
+  transition: all 0.15s;
+}
+.color-btn:hover {
+  transform: scale(1.2);
+}
+
+.file-row {
+  border-left: 3px solid transparent;
+  transition: background 0.1s;
+}
+.file-row:hover {
+  background-color: oklch(var(--b3) / 0.7);
+}
+.file-row.active-file {
+  border-left-color: oklch(var(--p));
+  background-color: oklch(var(--p) / 0.1);
+}
+
+.ann-canvas {
+  pointer-events: none;
+}
+
+#browser-panel,
+#annotation-sidebar {
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
