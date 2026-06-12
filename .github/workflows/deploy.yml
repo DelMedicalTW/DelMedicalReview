@@ -1,5 +1,3 @@
-mkdir -p .github/workflows
-
 name: Deploy to GitHub Pages
 
 on:
