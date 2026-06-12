@@ -1,13 +1,10 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAppState } from '../../state/AnnotationContext';
 import { fetchPDF } from '../../services/githubApi';
 import { PDF_SCALE } from '../../core/constants';
 import * as pdfjsLib from 'pdfjs-dist';
-import { fabric } from 'fabric';
-import { Annotation } from '../../core/types';
-import {
-  createVersion, buildAnchor, drawAnchor, createAnnotation, getLatestVersion,
-} from '../../core/annotationHelpers';
+import { Annotation, AnnotationAnchor } from '../../core/types';
+import { buildAnchor, createAnnotation, createVersion } from '../../core/annotationHelpers';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -18,17 +15,16 @@ export function PdfViewer() {
   var _b = useState<PageInfo[]>([]), pages = _b[0], setPages = _b[1];
   var _c = useState(false), loading = _c[0], setLoading = _c[1];
   var pdfDocRef = useRef<any>(null);
-  var fabricCanvasesRef = useRef<Map<number, fabric.Canvas>>(new Map());
   var pageReadyRef = useRef<Set<number>>(new Set());
   var renderedAnnsRef = useRef<Set<string>>(new Set());
   var loadingRef = useRef(false);
+  var localAnnotationsRef = useRef<Record<number, Annotation[]>>({});
 
   useEffect(function() {
     return function() {
-      fabricCanvasesRef.current.forEach(function(fc) { try { fc.off(); fc.dispose(); } catch(e) {} });
-      fabricCanvasesRef.current.clear();
       pageReadyRef.current.clear();
       renderedAnnsRef.current.clear();
+      localAnnotationsRef.current = {};
     };
   }, [state.currentPDFPath]);
 
@@ -54,27 +50,15 @@ export function PdfViewer() {
     return function() { cancelled = true; loadingRef.current = false; };
   }, [state.currentPDFPath, dispatch]);
 
-  // Restore annotations — render latest version only, use anchored rendering
-  useEffect(function() {
-    var anns = state.annotations[state.currentPDF] || [];
-    for (var i = 0; i < anns.length; i++) {
-      var ann = anns[i];
-      if (!pageReadyRef.current.has(ann.page)) continue;
-      if (renderedAnnsRef.current.has(ann.id)) continue;
-      var fc = fabricCanvasesRef.current.get(ann.page);
-      if (!fc) continue;
-      renderedAnnsRef.current.add(ann.id);
-      var latest = getLatestVersion(ann);
-      if (!latest.objects || !latest.objects.length) continue;
-      (fabric.util as any).enlivenObjects(latest.objects, function(objects: any[]) {
-        for (var j = 0; j < objects.length; j++) {
-          objects[j].set({ selectable: false, evented: false });
-          fc.add(objects[j]);
-        }
-        fc.renderAll();
-      });
-    }
-  }, [state.annotations, state.currentPDF, pages]);
+  // Handle annotation added from a page — syncs to global state
+  var handleAnnotationAdded = function(pageNum: number, ann: Annotation) {
+    dispatch({ type: 'ADD_ANNOTATION', pdf: state.currentPDF, payload: ann });
+  };
+
+  // Handle local annotations change for a page
+  var handleLocalChange = function(pageNum: number, anns: Annotation[]) {
+    localAnnotationsRef.current[pageNum] = anns;
+  };
 
   if (!state.currentPDFPath) {
     return React.createElement('div', { className: 'flex-1 flex items-center justify-center bg-[#525659] text-white/40 text-center' },
@@ -86,44 +70,53 @@ export function PdfViewer() {
       React.createElement('span', { className: 'loading loading-spinner loading-lg text-white/50' })
     );
   }
+
   return React.createElement('div', { className: 'flex-1 overflow-y-auto bg-[#525659] py-5 flex flex-col items-center gap-4' },
     pages.map(function(p) {
-      return React.createElement(PageRenderer, {
-        key: p.pageNum, pageNum: p.pageNum, width: p.width, height: p.height,
+      return React.createElement(SvgPdfPage, {
+        key: p.pageNum,
+        pageNum: p.pageNum,
+        width: p.width,
+        height: p.height,
         pdfDoc: pdfDocRef.current,
-        fabricCanvases: fabricCanvasesRef,
+        tool: state.tool,
+        color: state.color,
+        reviewer: state.reviewer,
+        currentPDF: state.currentPDF,
+        dispatch: dispatch,
         pageReadyRef: pageReadyRef,
-        tool: state.tool, color: state.color,
-        reviewer: state.reviewer, currentPDF: state.currentPDF, dispatch: dispatch,
+        renderedAnnsRef: renderedAnnsRef,
+        globalAnnotations: state.annotations[state.currentPDF] || [],
       });
     })
   );
 }
 
 // ============================================================
-// PAGE RENDERER
+// SVG PDF PAGE — 3 layers: Canvas | Text | SVG
 // ============================================================
-function PageRenderer(props: {
+function SvgPdfPage(props: {
   pageNum: number; width: number; height: number;
   pdfDoc: any;
-  fabricCanvases: React.MutableRefObject<Map<number, fabric.Canvas>>;
+  tool: string; color: string; reviewer: string;
+  currentPDF: string; dispatch: React.Dispatch<any>;
   pageReadyRef: React.MutableRefObject<Set<number>>;
-  tool: string; color: string;
-  reviewer: string; currentPDF: string; dispatch: React.Dispatch<any>;
+  renderedAnnsRef: React.MutableRefObject<Set<string>>;
+  globalAnnotations: Annotation[];
 }) {
   var pageNum = props.pageNum, width = props.width, height = props.height;
-  var pdfDoc = props.pdfDoc, fabricCanvases = props.fabricCanvases;
-  var pageReadyRef = props.pageReadyRef;
-  var tool = props.tool, color = props.color;
+  var pdfDoc = props.pdfDoc, tool = props.tool, color = props.color;
   var reviewer = props.reviewer, currentPDF = props.currentPDF, dispatch = props.dispatch;
+  var pageReadyRef = props.pageReadyRef, renderedAnnsRef = props.renderedAnnsRef;
+  var globalAnnotations = props.globalAnnotations;
 
-  var pdfCanvasRef = useRef<HTMLCanvasElement>(null);
-  var fabricCanvasElRef = useRef<HTMLCanvasElement>(null);
+  var containerRef = useRef<HTMLDivElement>(null);
+  var canvasRef = useRef<HTMLCanvasElement>(null);
   var textLayerRef = useRef<HTMLDivElement>(null);
-  var drawTimeoutRef = useRef<any>(null);
-  var handlersRef = useRef<{ mouseup: any; dblclick: any }>({ mouseup: null, dblclick: null });
-  var pathHandlerRef = useRef<any>(null);
-  var fcRef = useRef<fabric.Canvas | null>(null);
+  var [annotations, setAnnotations] = useState<Annotation[]>([]);
+  var [isDrawing, setIsDrawing] = useState(false);
+  var [currentPath, setCurrentPath] = useState('');
+  var [rendered, setRendered] = useState(false);
   var vpRef = useRef<any>(null);
   var toolRef = useRef(tool);
   var colorRef = useRef(color);
@@ -132,27 +125,27 @@ function PageRenderer(props: {
   colorRef.current = color;
   reviewerRef.current = reviewer;
 
-  var scheduleSave = useCallback(function(page: number, annType: string, fc: fabric.Canvas, existing?: Annotation) {
-    clearTimeout(drawTimeoutRef.current);
-    drawTimeoutRef.current = setTimeout(function() {
-      var version = createVersion(fc, reviewerRef.current, existing);
-      var ann: Annotation = existing
-        ? {
-            ...existing,
-            objects: version.objects,
-            versions: existing.versions.concat([version]),
-            currentVersion: existing.versions.length,
-            timestamp: version.timestamp,
-            comment: existing.comment,
-          }
-        : createAnnotation(page, annType, reviewerRef.current, colorRef.current, version);
-      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann });
-    }, 600);
-  }, [currentPDF, dispatch]);
-
+  // Merge global annotations into local state
   useEffect(function() {
-    if (!pdfDoc) return;
+    var merged: Annotation[] = [];
+    var seen: Record<string, boolean> = {};
+    for (var i = 0; i < globalAnnotations.length; i++) {
+      if (globalAnnotations[i].page === pageNum) {
+        merged.push(globalAnnotations[i]);
+        seen[globalAnnotations[i].id] = true;
+      }
+    }
+    for (var j = 0; j < annotations.length; j++) {
+      if (!seen[annotations[j].id]) merged.push(annotations[j]);
+    }
+    setAnnotations(merged);
+  }, [globalAnnotations, pageNum]);
+
+  // Render PDF canvas + text layer
+  useEffect(function() {
+    if (!pdfDoc || rendered) return;
     var cancelled = false;
+
     async function render() {
       try {
         var page = await pdfDoc.getPage(pageNum);
@@ -160,118 +153,251 @@ function PageRenderer(props: {
         vpRef.current = vp;
         if (cancelled) return;
 
-        var pdfCanvas = pdfCanvasRef.current;
-        if (pdfCanvas) { pdfCanvas.width = vp.width; pdfCanvas.height = vp.height; var ctx = pdfCanvas.getContext('2d'); if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise; }
+        var cvs = canvasRef.current;
+        if (cvs) {
+          cvs.width = vp.width; cvs.height = vp.height;
+          var ctx = cvs.getContext('2d');
+          if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        }
 
         var textContent = await page.getTextContent();
-        var textLayer = textLayerRef.current;
-        if (textLayer) {
-          textLayer.innerHTML = '';
-          textLayer.style.width = vp.width + 'px'; textLayer.style.height = vp.height + 'px';
+        var tl = textLayerRef.current;
+        if (tl) {
+          tl.innerHTML = '';
+          tl.style.width = vp.width + 'px'; tl.style.height = vp.height + 'px';
           for (var t = 0; t < textContent.items.length; t++) {
-            var it = textContent.items[t] as any; if (!it.str) continue;
+            var it = textContent.items[t] as any;
+            if (!it.str) continue;
             var tx = pdfjsLib.Util.transform(vp.transform, it.transform);
             var fh = Math.sqrt(tx[2]*tx[2]+tx[3]*tx[3]);
-            var span = document.createElement('span'); span.textContent = it.str;
+            var span = document.createElement('span');
+            span.textContent = it.str;
             span.style.cssText = 'left:'+tx[4]+'px;top:'+(tx[5]-fh)+'px;font-size:'+fh+'px;position:absolute;color:transparent;white-space:pre;cursor:text;';
-            textLayer.appendChild(span);
+            tl.appendChild(span);
           }
         }
 
-        var fabricCanvasEl = fabricCanvasElRef.current;
-        if (fabricCanvasEl) {
-          fabricCanvasEl.width = vp.width; fabricCanvasEl.height = vp.height;
-          var fc = fabricCanvases.current.get(pageNum);
-          if (!fc) {
-            fc = new fabric.Canvas(fabricCanvasEl, { selection: false, isDrawingMode: false, renderOnAddRemove: true });
-            fc.selection = false; fc.skipTargetFind = true;
-            fabricCanvases.current.set(pageNum, fc); fcRef.current = fc;
-            if (pathHandlerRef.current) fc.off('path:created', pathHandlerRef.current);
-            pathHandlerRef.current = function() { scheduleSave(pageNum, 'drawing', fc!); };
-            fc.on('path:created', pathHandlerRef.current);
-          } else { fc.setWidth(vp.width); fc.setHeight(vp.height); fcRef.current = fc; }
-
-          applyToolMode(fc, tool, color);
-          fc.renderAll();
-          pageReadyRef.current.add(pageNum);
-
-          var textLayerEl = textLayerRef.current;
-          if (textLayerEl && !handlersRef.current.mouseup) {
-            var onMouseUp = function() {
-              var ct = toolRef.current; if (ct !== 'highlight') return;
-              var sel = window.getSelection(); var txt = sel ? sel.toString().trim() : '';
-              if (!txt || !sel || !textLayerEl!.contains(sel.anchorNode)) return;
-              var range = sel.getRangeAt(0); var rects = range.getClientRects();
-              var tlRect = textLayerEl!.getBoundingClientRect();
-              var thisFc = fcRef.current; if (!thisFc) return;
-              var sx = vpRef.current.width / textLayerEl!.offsetWidth;
-              var sy = vpRef.current.height / textLayerEl!.offsetHeight;
-              var objects: any[] = [];
-              for (var i = 0; i < rects.length; i++) {
-                var r = rects[i];
-                var left = (r.left - tlRect.left) * sx, top = (r.top - tlRect.top) * sy;
-                var w = r.width * sx, h = r.height * sy;
-                var rect = new fabric.Rect({ left: left, top: top, width: w, height: h, fill: colorRef.current, selectable: false, evented: false, opacity: 0.5 });
-                thisFc.add(rect); objects.push(rect.toJSON());
-              }
-              thisFc.renderAll();
-              var version = createVersion(thisFc, reviewerRef.current);
-              var anchor = buildAnchor(pageNum, rects, tlRect, txt);
-              var ann = createAnnotation(pageNum, 'highlight', reviewerRef.current, colorRef.current, version, anchor, txt.substring(0, 100), txt);
-              dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann });
-            };
-            var onDblClick = function(e: MouseEvent) {
-              var ct = toolRef.current; if (ct !== 'comment') return;
-              var thisFc = fcRef.current; if (!thisFc) return;
-              var tlRect = textLayerEl!.getBoundingClientRect();
-              var sx = vpRef.current.width / textLayerEl!.offsetWidth;
-              var sy = vpRef.current.height / textLayerEl!.offsetHeight;
-              var x = (e.clientX - tlRect.left) * sx, y = (e.clientY - tlRect.top) * sy;
-              var comment = prompt('Add a note:'); if (!comment) return;
-              var marker = new fabric.Rect({ left: x-20, top: y-20, width: 40, height: 40, fill: '#fef08a', stroke: '#ca8a04', strokeWidth: 2, rx: 4, ry: 4, selectable: false, evented: false });
-              thisFc.add(marker); thisFc.renderAll();
-              var version = createVersion(thisFc, reviewerRef.current);
-              var ann = createAnnotation(pageNum, 'comment', reviewerRef.current, colorRef.current, version, undefined, comment);
-              ann.x = Math.round(x); ann.y = Math.round(y);
-              dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann });
-            };
-            textLayerEl.addEventListener('mouseup', onMouseUp);
-            textLayerEl.addEventListener('dblclick', onDblClick);
-            handlersRef.current = { mouseup: onMouseUp, dblclick: onDblClick };
-          }
-        }
+        if (!cancelled) { setRendered(true); pageReadyRef.current.add(pageNum); }
       } catch(e) { console.error('Render error page', pageNum, e); }
     }
     render();
-    return function() { cancelled = true; clearTimeout(drawTimeoutRef.current); };
-  }, [pdfDoc, pageNum]);
+    return function() { cancelled = true; };
+  }, [pdfDoc, pageNum, rendered]);
 
-  useEffect(function() {
-    return function() {
-      clearTimeout(drawTimeoutRef.current);
-      var tl = textLayerRef.current;
-      if (tl) { if (handlersRef.current.mouseup) tl.removeEventListener('mouseup', handlersRef.current.mouseup); if (handlersRef.current.dblclick) tl.removeEventListener('dblclick', handlersRef.current.dblclick); }
-      var fc = fabricCanvases.current.get(pageNum);
-      if (fc) { if (pathHandlerRef.current) fc.off('path:created', pathHandlerRef.current); fc.off(); fc.dispose(); fabricCanvases.current.delete(pageNum); }
-      pageReadyRef.current.delete(pageNum);
-      handlersRef.current = { mouseup: null, dblclick: null }; pathHandlerRef.current = null; fcRef.current = null;
-    };
-  }, []);
+  // Handle highlight on text selection
+  var handleTextSelection = function() {
+    if (toolRef.current !== 'highlight') return;
+    var sel = window.getSelection();
+    var text = sel ? sel.toString().trim() : '';
+    if (!text || !sel) return;
+    var tl = textLayerRef.current;
+    if (!tl || !tl.contains(sel.anchorNode)) return;
+    var range = sel.getRangeAt(0);
+    var rects = range.getClientRects();
+    var tlRect = tl.getBoundingClientRect();
+    var anchor = buildAnchor(pageNum, rects, tlRect, text);
+    var sx = vpRef.current.width / tl.offsetWidth;
+    var sy = vpRef.current.height / tl.offsetHeight;
+    var objects: any[] = [];
+    for (var i = 0; i < rects.length; i++) {
+      var r = rects[i];
+      objects.push({
+        type: 'highlight',
+        x: (r.left - tlRect.left) * sx,
+        y: (r.top - tlRect.top) * sy,
+        w: r.width * sx,
+        h: r.height * sy,
+      });
+    }
+    var ann = createAnnotation(pageNum, 'highlight', reviewerRef.current, colorRef.current, {
+      id: 'ver-' + Date.now(), timestamp: new Date().toISOString(),
+      objects: objects, updatedBy: reviewerRef.current || 'Anonymous',
+    }, anchor, text.substring(0, 100), text);
+    var newAnns = annotations.concat([ann]);
+    setAnnotations(newAnns);
+    dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann });
+  };
 
-  useEffect(function() { var fc = fabricCanvases.current.get(pageNum); if (fc) applyToolMode(fc, tool, color); }, [tool, color, pageNum]);
+  // Click handler for shapes and notes
+  var handlePageClick = function(e: React.MouseEvent) {
+    if (toolRef.current === 'select' || toolRef.current === 'draw' || toolRef.current === 'highlight') return;
+    var rect = containerRef.current!.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
 
-  return React.createElement('div', { className: 'page-wrapper relative bg-white flex-shrink-0 shadow-lg', style: { width: width, height: height }, 'data-page': pageNum },
-    React.createElement('canvas', { ref: pdfCanvasRef, className: 'block' }),
-    React.createElement('div', { ref: textLayerRef, className: 'absolute top-0 left-0 z-10 overflow-hidden' }),
-    React.createElement('canvas', { ref: fabricCanvasElRef, className: 'absolute top-0 left-0 z-20' }),
-    React.createElement('div', { className: 'absolute bottom-2 right-3 bg-black/60 text-white px-2 py-0.5 rounded text-xs pointer-events-none z-30' }, 'Page ' + pageNum)
+    if (toolRef.current === 'rectangle') {
+      var newAnn = createAnnotation(pageNum, 'rectangle', reviewerRef.current, colorRef.current, {
+        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(),
+        objects: [{ type: 'rectangle', x: x, y: y, w: 100, h: 60 }],
+        updatedBy: reviewerRef.current || 'Anonymous',
+      });
+      var newAnns1 = annotations.concat([newAnn]);
+      setAnnotations(newAnns1);
+      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn });
+    } else if (toolRef.current === 'comment') {
+      var comment = prompt('Add a note:');
+      if (!comment) return;
+      var newAnn2 = createAnnotation(pageNum, 'comment', reviewerRef.current, colorRef.current, {
+        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(),
+        objects: [{ type: 'note', x: x, y: y, text: comment }],
+        updatedBy: reviewerRef.current || 'Anonymous',
+      }, undefined, comment);
+      newAnn2.x = Math.round(x);
+      newAnn2.y = Math.round(y);
+      var newAnns2 = annotations.concat([newAnn2]);
+      setAnnotations(newAnns2);
+      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn2 });
+    }
+  };
+
+  // Drawing handlers
+  var handleMouseDown = function(e: React.MouseEvent) {
+    if (toolRef.current !== 'draw') return;
+    setIsDrawing(true);
+    var rect = containerRef.current!.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+    setCurrentPath('M ' + x + ' ' + y);
+  };
+
+  var handleMouseMove = function(e: React.MouseEvent) {
+    if (!isDrawing || toolRef.current !== 'draw') return;
+    var rect = containerRef.current!.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+    setCurrentPath(function(prev) { return prev + ' L ' + x + ' ' + y; });
+  };
+
+  var handleMouseUp = function() {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    if (currentPath) {
+      var newAnn = createAnnotation(pageNum, 'drawing', reviewerRef.current, colorRef.current, {
+        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(),
+        objects: [{ type: 'draw', path: currentPath }],
+        updatedBy: reviewerRef.current || 'Anonymous',
+      });
+      var newAnns = annotations.concat([newAnn]);
+      setAnnotations(newAnns);
+      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn });
+    }
+    setCurrentPath('');
+  };
+
+  return React.createElement('div', {
+    ref: containerRef,
+    className: 'page-wrapper',
+    style: {
+      position: 'relative', width: width + 'px', height: height + 'px',
+      margin: '0 auto', boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+      background: 'white', flexShrink: 0,
+      userSelect: tool === 'select' ? 'text' : 'none',
+    },
+    onClick: handlePageClick,
+    onMouseDown: handleMouseDown,
+    onMouseMove: handleMouseMove,
+    onMouseUp: handleMouseUp,
+    'data-page': pageNum,
+  },
+    // LAYER 1: PDF Canvas
+    React.createElement('canvas', { ref: canvasRef, style: { display: 'block' } }),
+
+    // LAYER 2: Text selection layer
+    React.createElement('div', {
+      ref: textLayerRef,
+      className: 'textLayer',
+      style: {
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        overflow: 'hidden', zIndex: 2,
+        pointerEvents: tool === 'select' || tool === 'highlight' ? 'auto' : 'none',
+        opacity: 1, lineHeight: 1.0,
+      },
+      onMouseUp: handleTextSelection,
+    }),
+
+    // LAYER 3: SVG annotation layer
+    React.createElement('svg', {
+      style: {
+        position: 'absolute', top: 0, left: 0,
+        width: '100%', height: '100%',
+        pointerEvents: tool === 'select' ? 'none' : 'auto',
+        zIndex: 3,
+      },
+    },
+      annotations.map(function(ann) {
+        var objs = (ann.versions && ann.versions.length > 0)
+          ? ann.versions[ann.currentVersion || ann.versions.length - 1].objects
+          : ann.objects;
+        if (!objs) return null;
+
+        return objs.map(function(obj, idx) {
+          if (obj.type === 'rectangle' || obj.type === 'highlight') {
+            var fill = obj.type === 'highlight'
+              ? color.replace(/[\d.]+\)$/, '0.4)').replace('rgba', 'rgba')
+              : 'none';
+            var stroke = obj.type === 'rectangle' ? color : 'none';
+            return React.createElement('rect', {
+              key: ann.id + '-' + idx,
+              x: obj.x, y: obj.y, width: obj.w, height: obj.h,
+              fill: fill, stroke: stroke, strokeWidth: obj.type === 'rectangle' ? 3 : 0,
+              style: obj.type === 'highlight' ? { mixBlendMode: 'multiply' } : {},
+            });
+          }
+          if (obj.type === 'draw') {
+            return React.createElement('path', {
+              key: ann.id + '-' + idx,
+              d: obj.path,
+              fill: 'none', stroke: color, strokeWidth: 3,
+              strokeLinecap: 'round', strokeLinejoin: 'round',
+            });
+          }
+          return null;
+        });
+      }),
+      isDrawing ? React.createElement('path', {
+        d: currentPath,
+        fill: 'none', stroke: color, strokeWidth: 3,
+        strokeLinecap: 'round', strokeLinejoin: 'round',
+      }) : null
+    ),
+
+    // LAYER 3.5: HTML Notes
+    React.createElement('div', {
+      style: {
+        position: 'absolute', top: 0, left: 0,
+        width: '100%', height: '100%',
+        pointerEvents: 'none', zIndex: 4,
+      },
+    },
+      annotations.filter(function(a) { return a.type === 'comment'; }).map(function(note) {
+        return React.createElement('div', {
+          key: note.id,
+          style: {
+            position: 'absolute',
+            top: (note.y || 0) + 'px',
+            left: (note.x || 0) + 'px',
+            background: '#fef08a',
+            border: '1px solid #ca8a04',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            fontSize: '12px',
+            pointerEvents: 'auto',
+            maxWidth: '180px',
+            boxShadow: '2px 2px 8px rgba(0,0,0,0.2)',
+            zIndex: 5,
+          },
+        }, note.comment);
+      })
+    ),
+
+    // Page label
+    React.createElement('div', {
+      style: {
+        position: 'absolute', bottom: '8px', right: '12px',
+        background: 'rgba(0,0,0,0.6)', color: 'white',
+        padding: '2px 8px', borderRadius: '4px',
+        fontSize: '0.7rem', pointerEvents: 'none', zIndex: 10,
+      },
+    }, 'Page ' + pageNum)
   );
-}
-
-function applyToolMode(fc: fabric.Canvas, tool: string, color: string) {
-  var el = fc.getElement() as HTMLElement; if (!el) return;
-  if (tool === 'select' || tool === 'highlight') { fc.isDrawingMode = false; fc.selection = false; fc.skipTargetFind = true; el.style.pointerEvents = 'auto'; }
-  else if (tool === 'draw') { fc.isDrawingMode = true; fc.selection = false; fc.skipTargetFind = false; el.style.pointerEvents = 'auto'; (fc as any).freeDrawingBrush.color = color.replace(/[\d.]+\)$/,'1)'); (fc as any).freeDrawingBrush.width = 3; }
-  else { fc.isDrawingMode = false; fc.selection = false; fc.skipTargetFind = false; el.style.pointerEvents = 'auto'; }
-  fc.renderAll();
 }
