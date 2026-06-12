@@ -57,6 +57,7 @@ export function PdfViewer() {
         pdfDoc: pdfDocRef.current, tool: state.tool, color: state.color,
         reviewer: state.reviewer, currentPDF: state.currentPDF, dispatch: dispatch,
         globalAnnotations: state.annotations[state.currentPDF] || [],
+        showAnnotations: state.showAnnotations,
       });
     })
   );
@@ -70,11 +71,13 @@ function SvgPdfPage(props: {
   pdfDoc: any; tool: string; color: string; reviewer: string;
   currentPDF: string; dispatch: React.Dispatch<any>;
   globalAnnotations: Annotation[];
+  showAnnotations: boolean;
 }) {
   var pageNum = props.pageNum, width = props.width, height = props.height;
   var pdfDoc = props.pdfDoc, tool = props.tool, color = props.color;
   var reviewer = props.reviewer, currentPDF = props.currentPDF, dispatch = props.dispatch;
   var globalAnnotations = props.globalAnnotations;
+  var showAnnotations = props.showAnnotations;
 
   var containerRef = useRef<HTMLDivElement>(null);
   var canvasRef = useRef<HTMLCanvasElement>(null);
@@ -95,7 +98,6 @@ function SvgPdfPage(props: {
   var colorRef = useRef(color); colorRef.current = color;
   var reviewerRef = useRef(reviewer); reviewerRef.current = reviewer;
 
-  // Merge global annotations into local state
   useEffect(function() {
     var merged: Annotation[] = []; var seen: Record<string, boolean> = {};
     for (var i = 0; i < globalAnnotations.length; i++) {
@@ -106,7 +108,6 @@ function SvgPdfPage(props: {
     setAnnotations(merged);
   }, [globalAnnotations, pageNum]);
 
-  // Render PDF canvas + text layer
   useEffect(function() {
     if (!pdfDoc || rendered) return; var cancelled = false;
     async function render() {
@@ -132,10 +133,8 @@ function SvgPdfPage(props: {
     render(); return function() { cancelled = true; };
   }, [pdfDoc, pageNum, rendered]);
 
-  // Get container-relative position
   var getPos = function(e: React.MouseEvent) { var r = containerRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
-  // FIXED: Highlight with debounce
   var lastHighlightTime = useRef(0);
   var handleTextSelection = function() {
     if (toolRef.current !== 'highlight' && toolRef.current !== 'select') return;
@@ -154,7 +153,6 @@ function SvgPdfPage(props: {
     setAnnotations(annotations.concat([ann])); dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann }); sel.removeAllRanges();
   };
 
-  // Mouse handlers
   var handleMouseDown = function(e: React.MouseEvent) {
     var pos = getPos(e);
     if (toolRef.current === 'rectangle') { setIsRectDrawing(true); setRectStart(pos); setRectCurrent({ x: pos.x, y: pos.y, w: 0, h: 0 }); return; }
@@ -173,12 +171,10 @@ function SvgPdfPage(props: {
 
   var handleMouseMove = function(e: React.MouseEvent) {
     var pos = getPos(e);
-    // Rectangle drawing preview
     if (isRectDrawing && rectStart) {
       var left = Math.min(rectStart.x, pos.x); var top = Math.min(rectStart.y, pos.y);
       setRectCurrent({ x: left, y: top, w: Math.abs(pos.x-rectStart.x), h: Math.abs(pos.y-rectStart.y) }); return;
     }
-    // FIXED: Dynamic resize — update annotation object directly
     if (resizing) {
       var dx = pos.x - resizing.startX; var dy = pos.y - resizing.startY;
       var newAnns = annotations.slice();
@@ -191,7 +187,6 @@ function SvgPdfPage(props: {
         setAnnotations(newAnns);
       } return;
     }
-    // Dragging
     if (dragging) {
       var dx2 = pos.x - dragging.startX; var dy2 = pos.y - dragging.startY;
       var newAnns2 = annotations.slice();
@@ -205,7 +200,6 @@ function SvgPdfPage(props: {
         setAnnotations(newAnns2);
       } return;
     }
-    // Drawing
     if (isDrawing) { setCurrentPath(function(prev: string) { return prev+' L '+pos.x+' '+pos.y; }); }
   };
 
@@ -240,7 +234,6 @@ function SvgPdfPage(props: {
     setIsDrawing(false); setCurrentPath('');
   };
 
-  // Drag/resize handlers
   var startDrag = function(e: React.MouseEvent, annId: string, objIdx: number) {
     e.stopPropagation(); var pos = getPos(e);
     var ann = annotations.find(function(a: Annotation) { return a.id===annId; }); if(!ann) return;
@@ -272,7 +265,6 @@ function SvgPdfPage(props: {
     setEditingNoteId(null);
   };
 
-  // FIXED: Cursor per tool
   var cursorStyle = 'default';
   if (tool === 'select') cursorStyle = 'default';
   if (tool === 'highlight') cursorStyle = 'text';
@@ -294,7 +286,7 @@ function SvgPdfPage(props: {
     // LAYER 1: PDF Canvas
     React.createElement('canvas', { ref: canvasRef, style: { display:'block', pointerEvents:'none' } }),
 
-    // LAYER 2: Text selection — FIXED: works in both select and highlight modes
+    // LAYER 2: Text selection — ALWAYS visible
     React.createElement('div', {
       ref: textLayerRef,
       style: {
@@ -306,8 +298,8 @@ function SvgPdfPage(props: {
       onMouseUp: handleTextSelection,
     }),
 
-    // LAYER 3: SVG Annotations
-    React.createElement('svg', {
+    // LAYER 3: SVG Annotations — toggled by showAnnotations
+    showAnnotations ? React.createElement('svg', {
       style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', zIndex:3, pointerEvents:'auto' },
     },
       annotations.filter(function(a: Annotation) { return a.page === pageNum || a.page === 0; }).map(function(ann: Annotation) {
@@ -351,27 +343,24 @@ function SvgPdfPage(props: {
           })
         );
       }),
-      // Live rectangle preview
       isRectDrawing && rectCurrent ? React.createElement('rect', {
         x: rectCurrent.x, y: rectCurrent.y, width: rectCurrent.w, height: rectCurrent.h,
         fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'), strokeWidth: 2,
         strokeDasharray: '5,5', pointerEvents: 'none',
       }) : null,
-      // Live drawing preview
       isDrawing && currentPath ? React.createElement('path', {
         d: currentPath, fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'),
         strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none',
       }) : null
-    ),
+    ) : null,
 
-       // LAYER 4: Sticky Notes — FIXED: colored background from selected color
-    React.createElement('div', {
+    // LAYER 4: Sticky Notes — toggled by showAnnotations
+    showAnnotations ? React.createElement('div', {
       style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:4 },
     },
       annotations.filter(function(a: Annotation) { return a.type==='comment' && (a.page===pageNum || a.page===0); }).map(function(note: Annotation) {
         var isEditing = editingNoteId === note.id;
         var noteColor = note.color || color;
-        // Create a lighter, semi-transparent version of the color for the background
         var bgColor = noteColor.replace(/[\d.]+\)$/, '0.35)');
         var borderColor = noteColor.replace(/[\d.]+\)$/, '0.8)');
 
@@ -403,8 +392,8 @@ function SvgPdfPage(props: {
               )
         );
       })
-    ),
-                             
+    ) : null,
+
     // Page label
     React.createElement('div', {
       style: { position:'absolute', bottom:'8px', right:'12px', background:'rgba(0,0,0,0.6)', color:'white', padding:'2px 8px', borderRadius:'4px', fontSize:'0.7rem', pointerEvents:'none', zIndex:10 },
