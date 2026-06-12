@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAppState } from '../../state/AnnotationContext';
-import { MousePointer2, Highlighter, Pen, Square, StickyNote, Undo2, Trash2 } from 'lucide-react';
+import { MousePointer2, Highlighter, Pen, Square, StickyNote, Undo2, Trash2, Eye, EyeOff } from 'lucide-react';
 
 var TOOLS = [
   { id: 'select' as const, icon: MousePointer2, label: 'Select' },
@@ -55,7 +55,18 @@ export function Toolbar() {
     // Spacer
     React.createElement('div', { className: 'flex-1' }),
 
-    // Undo — wired to dispatch
+    // Toggle annotations visibility — keeps text selection active
+    React.createElement('button', {
+      className: 'btn btn-ghost btn-sm',
+      title: state.showAnnotations ? 'Hide Annotations' : 'Show Annotations',
+      onClick: function() { dispatch({ type: 'TOGGLE_ANNOTATIONS' }); },
+    },
+      state.showAnnotations
+        ? React.createElement(Eye, { className: 'w-4 h-4' })
+        : React.createElement(EyeOff, { className: 'w-4 h-4' })
+    ),
+
+    // Undo
     React.createElement('button', {
       className: 'btn btn-ghost btn-sm',
       title: 'Undo last annotation',
@@ -64,7 +75,7 @@ export function Toolbar() {
       React.createElement(Undo2, { className: 'w-4 h-4' })
     ),
 
-    // Clear page — wired to dispatch
+    // Clear page
     React.createElement('button', {
       className: 'btn btn-ghost btn-sm text-error',
       title: 'Clear all annotations on current page',
