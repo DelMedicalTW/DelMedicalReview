@@ -5,18 +5,18 @@ import { AnnotationSidebar } from '../features/annotations/AnnotationSidebar';
 import { FileBrowser } from '../features/browser/FileBrowser';
 import { Toolbar } from '../features/toolbar/Toolbar';
 import { FabricManager } from '../services/FabricManager';
-import { Palette, FolderTree, MessageSquareText, Upload, Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { Palette, FolderTree, MessageSquareText, Upload, Download, FileText, Monitor, Moon, Sun, Cake, Zap } from 'lucide-react';
 
 function AppContent() {
   const { state, dispatch } = useAnnotationStore();
   const fabricManager = useRef(new FabricManager()).current;
 
   const themes = [
-    { name: 'auto', icon: 'monitor', label: 'Auto' },
-    { name: 'dark', icon: 'moon', label: 'Dark' },
-    { name: 'light', icon: 'sun', label: 'Light' },
-    { name: 'cupcake', icon: 'cake', label: 'Cupcake' },
-    { name: 'cyberpunk', icon: 'zap', label: 'Cyberpunk' },
+    { name: 'auto', icon: Monitor, label: 'Auto' },
+    { name: 'dark', icon: Moon, label: 'Dark' },
+    { name: 'light', icon: Sun, label: 'Light' },
+    { name: 'cupcake', icon: Cake, label: 'Cupcake' },
+    { name: 'cyberpunk', icon: Zap, label: 'Cyberpunk' },
   ];
 
   return (
@@ -33,18 +33,8 @@ function AppContent() {
         <div className="flex-none flex items-center gap-1">
           <div className="tooltip tooltip-bottom" data-tip="Sync status">
             <span className="badge badge-sm gap-1">
-              {state.syncStatus === 'syncing' ? (
-                <span className="loading loading-spinner loading-xs" />
-              ) : (
-                <Upload className="w-3 h-3" />
-              )}
-              <span>
-                {state.syncStatus === 'syncing'
-                  ? 'Syncing...'
-                  : state.lastSyncTime
-                  ? `Synced ${new Date(state.lastSyncTime).toLocaleTimeString()}`
-                  : 'GitHub'}
-              </span>
+              <Upload className="w-3 h-3" />
+              <span>GitHub</span>
             </span>
           </div>
           <button className="btn btn-ghost btn-sm" title="Export">
@@ -64,20 +54,23 @@ function AppContent() {
                     href="#"
                     onClick={(e) => {
                       e.preventDefault();
-                      document.documentElement.setAttribute('data-theme', t.name);
+                      const theme = t.name === 'auto'
+                        ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+                        : t.name;
+                      document.documentElement.setAttribute('data-theme', theme);
                       localStorage.setItem('delmed-theme', t.name);
                     }}
                   >
-                    {t.label}
+                    <t.icon className="w-4 h-4" /> {t.label}
                   </a>
                 </li>
               ))}
             </ul>
           </div>
-          <button className="btn btn-ghost btn-sm btn-square">
+          <button className="btn btn-ghost btn-sm btn-square" title="Toggle file browser">
             <FolderTree className="w-4 h-4" />
           </button>
-          <button className="btn btn-ghost btn-sm btn-square">
+          <button className="btn btn-ghost btn-sm btn-square" title="Toggle comments">
             <MessageSquareText className="w-4 h-4" />
           </button>
         </div>
