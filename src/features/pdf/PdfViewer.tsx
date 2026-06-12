@@ -14,9 +14,6 @@ interface PageInfo {
   height: number;
 }
 
-// ============================================================
-// PDF VIEWER — Manages page list and coordinates annotation restore
-// ============================================================
 export function PdfViewer() {
   const { state, dispatch } = useAppState();
   const [pages, setPages] = useState<PageInfo[]>([]);
@@ -26,7 +23,6 @@ export function PdfViewer() {
   const pageReadyRef = useRef<Set<number>>(new Set());
   const loadingRef = useRef(false);
 
-  // Cleanup on PDF change
   useEffect(() => {
     return () => {
       fabricCanvasesRef.current.forEach((fc) => { try { fc.off(); fc.dispose(); } catch(e) {} });
@@ -35,7 +31,6 @@ export function PdfViewer() {
     };
   }, [state.currentPDFPath]);
 
-  // Load PDF
   useEffect(() => {
     if (!state.currentPDFPath) return;
     if (loadingRef.current) return;
@@ -74,7 +69,6 @@ export function PdfViewer() {
     return () => { cancelled = true; loadingRef.current = false; };
   }, [state.currentPDFPath, dispatch]);
 
-  // Restore annotations — only when page is ready
   useEffect(() => {
     const anns = state.annotations[state.currentPDF] || [];
     anns.forEach((ann) => {
@@ -136,9 +130,6 @@ export function PdfViewer() {
   );
 }
 
-// ============================================================
-// PAGE RENDERER — Single source of truth: fabricCanvases Map
-// ============================================================
 function PageRenderer({
   pageNum, width, height, pdfDoc, fabricCanvases, pageReady, tool, color, reviewer, currentPDF, dispatch,
 }: PageInfo & {
@@ -157,7 +148,6 @@ function PageRenderer({
   const drawTimeoutRef = useRef<any>(null);
   const handlersRef = useRef<{ mouseup?: () => void; dblclick?: (e: MouseEvent) => void }>({});
 
-  // Save drawings after debounce
   const scheduleSave = useCallback((page: number, annType: string, fc: fabric.Canvas) => {
     clearTimeout(drawTimeoutRef.current);
     drawTimeoutRef.current = setTimeout(() => {
@@ -165,7 +155,7 @@ function PageRenderer({
       if (!objects.length) return;
       const serialized = objects.map(o => {
         const data = o.toJSON();
-        data._annType = annType;
+        (data as any)._annType = annType;
         return data;
       });
       const ann: Annotation = {
@@ -183,7 +173,6 @@ function PageRenderer({
     }, 800);
   }, [reviewer, color, currentPDF, dispatch]);
 
-  // FIX C: Correct highlight coordinates with canvas scale
   const createHighlight = useCallback((fc: fabric.Canvas, textLayer: HTMLElement) => {
     const sel = window.getSelection();
     const text = sel?.toString().trim();
@@ -211,7 +200,7 @@ function PageRenderer({
       });
       fc.add(rect);
       const objData = rect.toJSON();
-      objData._annType = 'highlight';
+      (objData as any)._annType = 'highlight';
       objects.push(objData);
     }
     fc.renderAll();
@@ -231,7 +220,6 @@ function PageRenderer({
     dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann });
   }, [pageNum, color, reviewer, currentPDF, dispatch]);
 
-  // FIX A: Properly managed event listeners
   useEffect(() => {
     if (!pdfDoc) return;
     let cancelled = false;
@@ -242,7 +230,6 @@ function PageRenderer({
         const vp = page.getViewport({ scale: PDF_SCALE });
         if (cancelled) return;
 
-        // PDF canvas
         const pdfCanvas = pdfCanvasRef.current;
         if (pdfCanvas) {
           pdfCanvas.width = vp.width;
@@ -251,7 +238,6 @@ function PageRenderer({
           if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise;
         }
 
-        // Text layer
         const textContent = await page.getTextContent();
         const textLayer = textLayerRef.current;
         if (textLayer) {
@@ -271,7 +257,6 @@ function PageRenderer({
           }
         }
 
-        // FIX B: Single source of truth — fabricCanvases Map only
         const fabricCanvasEl = fabricCanvasElRef.current;
         if (fabricCanvasEl) {
           fabricCanvasEl.width = vp.width;
@@ -289,18 +274,14 @@ function PageRenderer({
           (fc as any).lowerCanvasEl.style.pointerEvents = 'none';
           fabricCanvases.set(pageNum, fc);
 
-          // Path created → save drawing
           fc.on('path:created', () => {
             scheduleSave(pageNum, 'drawing', fc);
           });
 
-          // Apply current tool mode
           applyToolModeToCanvas(fc, tool, color);
 
-          // FIX A: Clean event handlers
           const textLayerEl = textLayerRef.current;
           if (textLayerEl) {
-            // Remove old handlers
             if (handlersRef.current.mouseup) {
               textLayerEl.removeEventListener('mouseup', handlersRef.current.mouseup);
             }
@@ -308,7 +289,6 @@ function PageRenderer({
               textLayerEl.removeEventListener('dblclick', handlersRef.current.dblclick);
             }
 
-            // Create new handlers
             const onMouseUp = () => {
               if (tool === 'highlight') createHighlight(fc, textLayerEl);
             };
@@ -354,7 +334,6 @@ function PageRenderer({
             handlersRef.current = { mouseup: onMouseUp, dblclick: onDblClick };
           }
 
-          // Mark page as ready
           pageReady.add(pageNum);
         }
 
@@ -365,7 +344,6 @@ function PageRenderer({
 
     render();
 
-    // FIX A + B: Cleanup removes listeners AND disposes canvas
     return () => {
       cancelled = true;
       clearTimeout(drawTimeoutRef.current);
@@ -386,7 +364,6 @@ function PageRenderer({
     };
   }, [pdfDoc, pageNum]);
 
-  // Update tool mode when tool/color changes
   useEffect(() => {
     const fc = fabricCanvases.get(pageNum);
     if (fc) applyToolModeToCanvas(fc, tool, color);
@@ -404,9 +381,6 @@ function PageRenderer({
   );
 }
 
-// ============================================================
-// TOOL MODE HELPER (pure function, no closure issues)
-// ============================================================
 function applyToolModeToCanvas(fc: fabric.Canvas, tool: string, color: string) {
   const el = (fc as any).lowerCanvasEl as HTMLElement;
   if (!el) return;
