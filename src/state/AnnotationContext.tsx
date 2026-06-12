@@ -95,7 +95,7 @@ function reducer(state: AppState, action: Action): AppState {
         id: action.payload.id || generateId(),
         reviewer: action.payload.reviewer || state.reviewer || 'Anonymous',
         timestamp: action.payload.timestamp || new Date().toISOString(),
-        status: action.payload.status || 'draft',
+        status: action.payload.status || 'in_review',
         versions: action.payload.versions || [],
         currentVersion: action.payload.currentVersion || 0,
         objects: action.payload.objects || [],
