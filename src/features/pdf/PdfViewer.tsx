@@ -372,7 +372,7 @@ function SvgPdfPage(props: {
         var isEditing = editingNoteId === note.id;
         var noteColor = note.color || color;
         // Create a lighter, semi-transparent version of the color for the background
-        var bgColor = noteColor.replace(/[\d.]+\)$/, '0.25)');
+        var bgColor = noteColor.replace(/[\d.]+\)$/, '0.35)');
         var borderColor = noteColor.replace(/[\d.]+\)$/, '0.8)');
 
         return React.createElement('div', {
