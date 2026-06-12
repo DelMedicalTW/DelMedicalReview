@@ -364,20 +364,22 @@ function SvgPdfPage(props: {
       }) : null
     ),
 
-    // LAYER 4: Sticky Notes — FIXED: colored border, black text, yellow background
+       // LAYER 4: Sticky Notes — FIXED: colored background from selected color
     React.createElement('div', {
       style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:4 },
     },
       annotations.filter(function(a: Annotation) { return a.type==='comment' && (a.page===pageNum || a.page===0); }).map(function(note: Annotation) {
         var isEditing = editingNoteId === note.id;
         var noteColor = note.color || color;
-        var borderColor = noteColor.replace(/[\d.]+\)$/,'1)');
+        // Create a lighter, semi-transparent version of the color for the background
+        var bgColor = noteColor.replace(/[\d.]+\)$/, '0.25)');
+        var borderColor = noteColor.replace(/[\d.]+\)$/, '0.8)');
 
         return React.createElement('div', {
           key: note.id,
           style: {
             position: 'absolute', top: (note.y||0)+'px', left: (note.x||0)+'px',
-            background: '#fef9c3',
+            background: bgColor,
             border: '2px solid '+borderColor,
             borderRadius: '2px 8px 8px 8px', padding: '4px 8px',
             fontSize: '11px', fontFamily: 'sans-serif', color: '#1a1a1a',
@@ -397,12 +399,12 @@ function SvgPdfPage(props: {
                 onKeyDown: function(e: any) { if(e.key==='Escape') setEditingNoteId(null); if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); saveNoteEdit(note.id); } },
               })
             : React.createElement('div', { style: { whiteSpace:'pre-wrap', wordBreak:'break-word', minHeight:'16px' } },
-                note.comment || React.createElement('span', { style: { color:'#999', fontStyle:'italic' } }, 'Double-click to edit')
+                note.comment || React.createElement('span', { style: { color:'#666', fontStyle:'italic' } }, 'Double-click to edit')
               )
         );
       })
     ),
-
+                             
     // Page label
     React.createElement('div', {
       style: { position:'absolute', bottom:'8px', right:'12px', background:'rgba(0,0,0,0.6)', color:'white', padding:'2px 8px', borderRadius:'4px', fontSize:'0.7rem', pointerEvents:'none', zIndex:10 },
