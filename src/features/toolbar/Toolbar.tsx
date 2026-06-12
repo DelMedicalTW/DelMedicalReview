@@ -1,7 +1,7 @@
 import React from 'react';
 import { useAnnotationStore } from '../../state/AnnotationContext';
 import { FabricManager } from '../../services/FabricManager';
-import { MousePointer2, Highlighter, Pen, SquareDashed, StickyNote, Undo2, Trash2 } from 'lucide-react';
+import { MousePointer2, Highlighter, Pen, Square, StickyNote, Undo2, Trash2 } from 'lucide-react';
 
 interface ToolbarProps {
   fabricManager: FabricManager;
@@ -11,7 +11,7 @@ const TOOLS = [
   { id: 'select', icon: MousePointer2, label: 'Select' },
   { id: 'highlight', icon: Highlighter, label: 'Highlight' },
   { id: 'draw', icon: Pen, label: 'Draw' },
-  { id: 'rectangle', icon: SquareDashed, label: 'Rect' },
+  { id: 'rectangle', icon: Square, label: 'Rect' },
   { id: 'comment', icon: StickyNote, label: 'Note' },
 ] as const;
 
@@ -41,7 +41,7 @@ export function Toolbar({ fabricManager }: ToolbarProps) {
         {TOOLS.map(({ id, icon: Icon, label }) => (
           <button
             key={id}
-            className={`join-item btn btn-sm ${state.tool === id ? 'tool-active' : 'btn-ghost'}`}
+            className={`join-item btn btn-sm ${state.tool === id ? '!bg-primary !text-primary-content font-semibold' : 'btn-ghost'}`}
             onClick={() => setTool(id)}
           >
             <Icon className="w-4 h-4" />
@@ -52,20 +52,28 @@ export function Toolbar({ fabricManager }: ToolbarProps) {
       <div className="divider divider-horizontal mx-1" />
       <span className="text-xs text-base-content/50">Color:</span>
       <div className="flex gap-1">
-        {COLORS.map((color, i) => (
-          <span
-            key={i}
-            className={`color-btn w-6 h-6 rounded-full border-2 cursor-pointer flex-shrink-0 ${
-              state.color === color ? 'selected border-white shadow-[0_0_0_2px_var(--fallback-p)]' : 'border-transparent'
-            }`}
-            style={{ background: ['#ffd54f', '#58a6ff', '#3fb950', '#f85149'][i] }}
-            onClick={() => setColor(color)}
-          />
-        ))}
+        {COLORS.map((color, i) => {
+          const bgColors = ['#ffd54f', '#58a6ff', '#3fb950', '#f85149'];
+          return (
+            <span
+              key={i}
+              className={`color-btn w-6 h-6 rounded-full border-2 cursor-pointer flex-shrink-0 transition-all hover:scale-125 ${
+                state.color === color ? '!border-white shadow-[0_0_0_2px_var(--fallback-p,oklch(var(--p)))]' : 'border-transparent'
+              }`}
+              style={{ background: bgColors[i] }}
+              onClick={() => setColor(color)}
+              title={['Yellow', 'Blue', 'Green', 'Red'][i]}
+            />
+          );
+        })}
       </div>
       <div className="flex-1" />
-      <button className="btn btn-ghost btn-sm"><Undo2 className="w-4 h-4" /></button>
-      <button className="btn btn-ghost btn-sm text-error"><Trash2 className="w-4 h-4" /></button>
+      <button className="btn btn-ghost btn-sm" title="Undo">
+        <Undo2 className="w-4 h-4" />
+      </button>
+      <button className="btn btn-ghost btn-sm text-error" title="Clear Page">
+        <Trash2 className="w-4 h-4" />
+      </button>
     </div>
   );
 }
