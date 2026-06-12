@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, ReactNode } from 'react';
-import { Annotation, Tool } from '../core/types';
+import { Annotation, Tool, AnnotationType, AnnotationStatus } from '../core/types';
 
 export interface AppState {
   currentPDF: string;
@@ -11,6 +11,7 @@ export interface AppState {
   isLoadingPDF: boolean;
   showBrowser: boolean;
   showSidebar: boolean;
+  reviewer: string;
 }
 
 type Action =
@@ -19,9 +20,17 @@ type Action =
   | { type: 'SET_TOOL'; payload: Tool }
   | { type: 'SET_COLOR'; payload: string }
   | { type: 'SET_LOADING'; payload: boolean }
+  | { type: 'SET_REVIEWER'; payload: string }
   | { type: 'SET_ANNOTATIONS'; pdf: string; payload: Annotation[] }
+  | { type: 'ADD_ANNOTATION'; pdf: string; payload: Annotation }
+  | { type: 'DELETE_ANNOTATION'; pdf: string; id: string }
+  | { type: 'UPDATE_ANNOTATION'; pdf: string; id: string; changes: Partial<Annotation> }
   | { type: 'TOGGLE_BROWSER' }
   | { type: 'TOGGLE_SIDEBAR' };
+
+function generateId(): string {
+  return 'ann-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
+}
 
 const initialState: AppState = {
   currentPDF: '',
@@ -33,6 +42,7 @@ const initialState: AppState = {
   isLoadingPDF: false,
   showBrowser: true,
   showSidebar: true,
+  reviewer: localStorage.getItem('delmed-reviewer') || '',
 };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -47,8 +57,36 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, color: action.payload };
     case 'SET_LOADING':
       return { ...state, isLoadingPDF: action.payload };
+    case 'SET_REVIEWER':
+      localStorage.setItem('delmed-reviewer', action.payload);
+      return { ...state, reviewer: action.payload };
     case 'SET_ANNOTATIONS':
       return { ...state, annotations: { ...state.annotations, [action.pdf]: action.payload } };
+    case 'ADD_ANNOTATION': {
+      const current = state.annotations[action.pdf] || [];
+      const ann = {
+        ...action.payload,
+        id: action.payload.id || generateId(),
+        reviewer: action.payload.reviewer || state.reviewer || 'Anonymous',
+        timestamp: action.payload.timestamp || new Date().toISOString(),
+        status: action.payload.status || 'open',
+      };
+      return { ...state, annotations: { ...state.annotations, [action.pdf]: [...current, ann] } };
+    }
+    case 'DELETE_ANNOTATION': {
+      const current = state.annotations[action.pdf] || [];
+      return { ...state, annotations: { ...state.annotations, [action.pdf]: current.filter(a => a.id !== action.id) } };
+    }
+    case 'UPDATE_ANNOTATION': {
+      const current = state.annotations[action.pdf] || [];
+      return {
+        ...state,
+        annotations: {
+          ...state.annotations,
+          [action.pdf]: current.map(a => a.id === action.id ? { ...a, ...action.changes } : a),
+        },
+      };
+    }
     case 'TOGGLE_BROWSER':
       return { ...state, showBrowser: !state.showBrowser };
     case 'TOGGLE_SIDEBAR':
