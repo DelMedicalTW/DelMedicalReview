@@ -5,7 +5,7 @@ import { PDF_SCALE } from '../../core/constants';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Annotation } from '../../core/types';
 import { buildAnchor, createAnnotation, createVersion } from '../../core/annotationHelpers';
-import { saveToGitHub, loadFromGitHub, saveLocal } from '../../services/syncService';
+import { loadAnnotations, saveAnnotations, saveLocal } from '../../services/syncService';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -22,22 +22,22 @@ export function PdfViewer() {
 
   useEffect(function() { return function() { pageReadyRef.current.clear(); }; }, [state.currentPDFPath]);
 
+  // Load annotations from KV when PDF changes
   useEffect(function() {
     if (!state.currentPDF) return;
-    loadFromGitHub(state.currentPDF).then(function(ghAnns) {
-      if (ghAnns.length > 0) {
-        dispatch({ type: 'SET_ANNOTATIONS', pdf: state.currentPDF, payload: ghAnns });
+    loadAnnotations(state.currentPDF).then(function(anns) {
+      if (anns.length > 0) {
+        dispatch({ type: 'SET_ANNOTATIONS', pdf: state.currentPDF, payload: anns });
       }
     }).catch(function() {});
   }, [state.currentPDF]);
 
+  // Auto-save to KV + local when annotations change
   useEffect(function() {
     if (!state.currentPDF) return;
-    var anns = state.annotations[state.currentPDF] || [];
-    saveLocal(state.annotations);
     clearTimeout(syncTimerRef.current);
     syncTimerRef.current = setTimeout(function() {
-      saveToGitHub(state.currentPDF, anns, state.reviewer).catch(function() {});
+      saveAnnotations(state.currentPDF, state.annotations, state.reviewer).catch(function() {});
     }, 3000);
   }, [state.annotations, state.currentPDF, state.reviewer]);
 
@@ -144,7 +144,6 @@ function SvgPdfPage(props: {
             var it = textContent.items[t] as any; if (!it.str) continue;
             var tx = pdfjsLib.Util.transform(vp.transform, it.transform); var fh = Math.sqrt(tx[2]*tx[2]+tx[3]*tx[3]);
             var span = document.createElement('span'); span.textContent = it.str;
-            // FIX #3: Use near-transparent color instead of fully transparent for better browser selection
             span.style.cssText = 'left:'+tx[4]+'px;top:'+(tx[5]-fh)+'px;font-size:'+fh+'px;position:absolute;color:rgba(0,0,0,0.01);white-space:pre;cursor:text;font-family:sans-serif;';
             tl.appendChild(span);
           }
@@ -157,7 +156,6 @@ function SvgPdfPage(props: {
 
   var getPos = function(e: React.MouseEvent) { var r = containerRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
-  // FIX #2: Guard mouse handlers — skip for select and highlight tools
   var handleMouseDown = function(e: React.MouseEvent) {
     if (toolRef.current === 'select' || toolRef.current === 'highlight') return;
     var pos = getPos(e);
@@ -175,7 +173,6 @@ function SvgPdfPage(props: {
     }
   };
 
-  // FIX #2: Guard mouse move — skip for select and highlight tools
   var handleMouseMove = function(e: React.MouseEvent) {
     if (toolRef.current === 'select' || toolRef.current === 'highlight') return;
     var pos = getPos(e);
@@ -295,7 +292,7 @@ function SvgPdfPage(props: {
     // LAYER 1: PDF Canvas
     React.createElement('canvas', { ref: canvasRef, style: { display:'block', pointerEvents:'none' } }),
 
-    // LAYER 2: Text selection — ALWAYS visible, works for select + highlight
+    // LAYER 2: Text selection
     React.createElement('div', {
       ref: textLayerRef,
       style: {
@@ -335,7 +332,7 @@ function SvgPdfPage(props: {
       },
     }),
 
-    // LAYER 3: SVG Annotations — FIX #1 + #4: pointerEvents based on tool
+    // LAYER 3: SVG Annotations
     showAnnotations ? React.createElement('svg', {
       style: {
         position:'absolute', top:0, left:0, width:'100%', height:'100%', zIndex:3,
@@ -368,7 +365,7 @@ function SvgPdfPage(props: {
       isDrawing && currentPath ? React.createElement('path', { d: currentPath, fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'), strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none' }) : null
     ) : null,
 
-    // LAYER 4: Sticky Notes — toggled by showAnnotations, SOLID background
+    // LAYER 4: Sticky Notes
     showAnnotations ? React.createElement('div', { style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:4 } },
       annotations.filter(function(a: Annotation) { return a.type==='comment' && (a.page===pageNum || a.page===0); }).map(function(note: Annotation) {
         var isEditing = editingNoteId === note.id;
