@@ -11,7 +11,8 @@ export class FabricManager {
       isDrawingMode: false,
       renderOnAddRemove: true,
     });
-    canvas.lowerCanvasEl.style.pointerEvents = 'none';
+    // TypeScript doesn't know about lowerCanvasEl, but it exists at runtime
+    (canvas as any).lowerCanvasEl.style.pointerEvents = 'none';
     this.canvases.set(page, canvas);
     return canvas;
   }
@@ -62,8 +63,9 @@ export class FabricManager {
 
   setTool(tool: string, color: string): void {
     this.canvases.forEach((fc) => {
-      if (!fc || !fc.lowerCanvasEl) return;
-      const el = fc.lowerCanvasEl;
+      const canvasAny = fc as any;
+      if (!canvasAny.lowerCanvasEl) return;
+      const el = canvasAny.lowerCanvasEl as HTMLElement;
       if (tool === 'select' || tool === 'highlight') {
         el.style.pointerEvents = 'none';
         fc.isDrawingMode = false;
@@ -72,8 +74,8 @@ export class FabricManager {
         el.style.pointerEvents = 'auto';
         fc.isDrawingMode = true;
         fc.selection = false;
-        fc.freeDrawingBrush.color = color.replace(/[\d.]+\)$/, '1)');
-        fc.freeDrawingBrush.width = 3;
+        (fc as any).freeDrawingBrush.color = color.replace(/[\d.]+\)$/, '1)');
+        (fc as any).freeDrawingBrush.width = 3;
       } else {
         el.style.pointerEvents = 'auto';
         fc.isDrawingMode = false;
