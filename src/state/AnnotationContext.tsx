@@ -30,13 +30,15 @@ type Action =
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'UPDATE_STATUS'; pdf: string; id: string; status: AnnotationStatus }
   | { type: 'ADD_REPLY'; pdf: string; id: string; message: string; author: string }
-  | { type: 'ADD_VERSION'; pdf: string; id: string; version: AnnotationVersion };
+  | { type: 'ADD_VERSION'; pdf: string; id: string; version: AnnotationVersion }
+  | { type: 'UNDO_LAST' }
+  | { type: 'CLEAR_CURRENT_PAGE' };
 
 function generateId(): string {
   return 'ann-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
 }
 
-const initialState: AppState = {
+var initialState: AppState = {
   currentPDF: '',
   currentPDFPath: '',
   currentPath: '',
@@ -66,9 +68,20 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, reviewer: action.payload };
     case 'SET_ANNOTATIONS':
       return { ...state, annotations: { ...state.annotations, [action.pdf]: action.payload } };
+    case 'UNDO_LAST': {
+      var pdfU = state.currentPDF;
+      var currentU = state.annotations[pdfU] || [];
+      if (currentU.length === 0) return state;
+      var withoutLast = currentU.slice(0, -1);
+      return { ...state, annotations: { ...state.annotations, [pdfU]: withoutLast } };
+    }
+    case 'CLEAR_CURRENT_PAGE': {
+      var pdfC = state.currentPDF;
+      return { ...state, annotations: { ...state.annotations, [pdfC]: [] } };
+    }
     case 'ADD_ANNOTATION': {
       var currentAdd = state.annotations[action.pdf] || [];
-      var ann = {
+      var ann: Annotation = {
         ...action.payload,
         id: action.payload.id || generateId(),
         reviewer: action.payload.reviewer || state.reviewer || 'Anonymous',
@@ -86,7 +99,13 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case 'DELETE_ANNOTATION': {
       var currentDel = state.annotations[action.pdf] || [];
-      return { ...state, annotations: { ...state.annotations, [action.pdf]: currentDel.filter(function(a) { return a.id !== action.id; }) } };
+      return {
+        ...state,
+        annotations: {
+          ...state.annotations,
+          [action.pdf]: currentDel.filter(function(a: Annotation) { return a.id !== action.id; }),
+        },
+      };
     }
     case 'UPDATE_ANNOTATION': {
       var currentUpd = state.annotations[action.pdf] || [];
@@ -94,7 +113,9 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         annotations: {
           ...state.annotations,
-          [action.pdf]: currentUpd.map(function(a) { return a.id === action.id ? { ...a, ...action.changes } : a; }),
+          [action.pdf]: currentUpd.map(function(a: Annotation) {
+            return a.id === action.id ? { ...a, ...action.changes } : a;
+          }),
         },
       };
     }
@@ -104,7 +125,7 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         annotations: {
           ...state.annotations,
-          [action.pdf]: currentSt.map(function(a) {
+          [action.pdf]: currentSt.map(function(a: Annotation) {
             if (a.id === action.id) return updateAnnotationStatus(a, action.status);
             return a;
           }),
@@ -117,7 +138,7 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         annotations: {
           ...state.annotations,
-          [action.pdf]: currentRp.map(function(a) {
+          [action.pdf]: currentRp.map(function(a: Annotation) {
             if (a.id === action.id) return addReply(a, action.message, action.author);
             return a;
           }),
@@ -130,7 +151,7 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         annotations: {
           ...state.annotations,
-          [action.pdf]: currentVr.map(function(a) {
+          [action.pdf]: currentVr.map(function(a: Annotation) {
             if (a.id === action.id) {
               return {
                 ...a,
@@ -154,13 +175,17 @@ function reducer(state: AppState, action: Action): AppState {
   }
 }
 
-const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null);
+var Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null);
 
-export function AppProvider({ children }: { children: ReactNode }) {
+export function AppProvider(props: { children: ReactNode }) {
   var _a = useReducer(reducer, initialState);
   var state = _a[0];
   var dispatch = _a[1];
-  return React.createElement(Ctx.Provider, { value: { state: state, dispatch: dispatch } }, children);
+  return React.createElement(
+    Ctx.Provider,
+    { value: { state: state, dispatch: dispatch } },
+    props.children
+  );
 }
 
 export function useAppState() {
