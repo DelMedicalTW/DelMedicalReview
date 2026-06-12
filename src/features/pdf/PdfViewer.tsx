@@ -5,6 +5,7 @@ import { PDF_SCALE } from '../../core/constants';
 import * as pdfjsLib from 'pdfjs-dist';
 import { Annotation } from '../../core/types';
 import { buildAnchor, createAnnotation, createVersion } from '../../core/annotationHelpers';
+import { saveToGitHub, loadFromGitHub, saveLocal } from '../../services/syncService';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -17,8 +18,30 @@ export function PdfViewer() {
   var pdfDocRef = useRef<any>(null);
   var pageReadyRef = useRef<Set<number>>(new Set());
   var loadingRef = useRef(false);
+  var syncTimerRef = useRef<any>(null);
 
   useEffect(function() { return function() { pageReadyRef.current.clear(); }; }, [state.currentPDFPath]);
+
+  // Load annotations from GitHub when PDF changes
+  useEffect(function() {
+    if (!state.currentPDF) return;
+    loadFromGitHub(state.currentPDF).then(function(ghAnns) {
+      if (ghAnns.length > 0) {
+        dispatch({ type: 'SET_ANNOTATIONS', pdf: state.currentPDF, payload: ghAnns });
+      }
+    }).catch(function() {});
+  }, [state.currentPDF]);
+
+  // Auto-save to GitHub when annotations change
+  useEffect(function() {
+    if (!state.currentPDF) return;
+    var anns = state.annotations[state.currentPDF] || [];
+    saveLocal(state.annotations);
+    clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(function() {
+      saveToGitHub(state.currentPDF, anns, state.reviewer).catch(function() {});
+    }, 3000);
+  }, [state.annotations, state.currentPDF, state.reviewer]);
 
   useEffect(function() {
     if (!state.currentPDFPath) return;
@@ -134,24 +157,6 @@ function SvgPdfPage(props: {
   }, [pdfDoc, pageNum, rendered]);
 
   var getPos = function(e: React.MouseEvent) { var r = containerRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
-
-  var lastHighlightTime = useRef(0);
-  var handleTextSelection = function() {
-    if (toolRef.current !== 'highlight' && toolRef.current !== 'select') return;
-    var now = Date.now(); if (now - lastHighlightTime.current < 400) return;
-    lastHighlightTime.current = now;
-    var sel = window.getSelection(); var text = sel ? sel.toString().trim() : '';
-    if (!text || !sel) return;
-    var tl = textLayerRef.current; if (!tl || !tl.contains(sel.anchorNode)) return;
-    var range = sel.getRangeAt(0); var rects = range.getClientRects(); var tlRect = tl.getBoundingClientRect();
-    var sx = vpRef.current.width / tl.offsetWidth; var sy = vpRef.current.height / tl.offsetHeight;
-    var objects: any[] = [];
-    for (var i = 0; i < rects.length; i++) { var r = rects[i]; objects.push({ type: 'highlight', x: (r.left-tlRect.left)*sx, y: (r.top-tlRect.top)*sy, w: r.width*sx, h: r.height*sy }); }
-    var ann = createAnnotation(pageNum, 'highlight', reviewerRef.current, colorRef.current, {
-      id: 'ver-'+Date.now(), timestamp: new Date().toISOString(), objects: objects, updatedBy: reviewerRef.current||'Anonymous',
-    }, buildAnchor(pageNum, rects, tlRect, text), text.substring(0,100), text);
-    setAnnotations(annotations.concat([ann])); dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann }); sel.removeAllRanges();
-  };
 
   var handleMouseDown = function(e: React.MouseEvent) {
     var pos = getPos(e);
@@ -286,16 +291,44 @@ function SvgPdfPage(props: {
     // LAYER 1: PDF Canvas
     React.createElement('canvas', { ref: canvasRef, style: { display:'block', pointerEvents:'none' } }),
 
-    // LAYER 2: Text selection — ALWAYS visible
+    // LAYER 2: Text selection — ALWAYS visible, works for select + highlight
     React.createElement('div', {
       ref: textLayerRef,
       style: {
         position:'absolute', top:0, left:0, right:0, bottom:0,
         overflow:'hidden', zIndex:2,
-        pointerEvents: tool==='select' || tool==='highlight' ? 'auto' : 'none',
+        pointerEvents: 'auto',
         lineHeight: 1.0,
+        userSelect: 'text',
       },
-      onMouseUp: handleTextSelection,
+      onMouseUp: function(e: React.MouseEvent) {
+        if (toolRef.current !== 'highlight' && toolRef.current !== 'select') return;
+        setTimeout(function() {
+          var sel = window.getSelection();
+          var text = sel ? sel.toString().trim() : '';
+          if (!text || !sel) return;
+          var tl = textLayerRef.current;
+          if (!tl || !tl.contains(sel.anchorNode)) return;
+          var range = sel.getRangeAt(0);
+          var rects = range.getClientRects();
+          var tlRect = tl.getBoundingClientRect();
+          var sx = vpRef.current.width / tl.offsetWidth;
+          var sy = vpRef.current.height / tl.offsetHeight;
+          var objects: any[] = [];
+          for (var i = 0; i < rects.length; i++) {
+            var r = rects[i];
+            objects.push({ type: 'highlight', x: (r.left-tlRect.left)*sx, y: (r.top-tlRect.top)*sy, w: r.width*sx, h: r.height*sy });
+          }
+          if (toolRef.current === 'highlight') {
+            var ann = createAnnotation(pageNum, 'highlight', reviewerRef.current, colorRef.current, {
+              id: 'ver-'+Date.now(), timestamp: new Date().toISOString(), objects: objects, updatedBy: reviewerRef.current||'Anonymous',
+            }, buildAnchor(pageNum, rects, tlRect, text), text.substring(0,100), text);
+            setAnnotations(annotations.concat([ann]));
+            dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann });
+            sel.removeAllRanges();
+          }
+        }, 50);
+      },
     }),
 
     // LAYER 3: SVG Annotations — toggled by showAnnotations
@@ -308,95 +341,47 @@ function SvgPdfPage(props: {
         var objColor = ann.color||color;
         var fillColor = objColor.replace(/[\d.]+\)$/,'0.4)');
         var strokeColor = objColor.replace(/[\d.]+\)$/,'1)');
-
         return React.createElement('g', { key: ann.id },
           objs.map(function(obj: any, idx: number) {
             if (obj.type === 'rectangle') {
               return React.createElement('g', { key: idx },
-                React.createElement('rect', {
-                  x: obj.x, y: obj.y, width: obj.w||100, height: obj.h||60,
-                  fill: 'none', stroke: strokeColor, strokeWidth: 2,
-                  style: { cursor: 'move' },
-                  onMouseDown: function(e: any) { startDrag(e, ann.id, idx); },
-                  onDoubleClick: function(e: any) { handleDoubleClick(e, ann.id); },
-                }),
+                React.createElement('rect', { x: obj.x, y: obj.y, width: obj.w||100, height: obj.h||60, fill: 'none', stroke: strokeColor, strokeWidth: 2, style: { cursor: 'move' }, onMouseDown: function(e: any) { startDrag(e, ann.id, idx); }, onDoubleClick: function(e: any) { handleDoubleClick(e, ann.id); } }),
                 React.createElement('rect', { x:(obj.x+(obj.w||100)-8), y:(obj.y+(obj.h||60)-8), width:8, height:8, fill:strokeColor, stroke:'white', strokeWidth:1, style:{cursor:'se-resize'}, onMouseDown:function(e: any){ startResize(e,ann.id,idx,'se'); } }),
                 React.createElement('rect', { x:(obj.x+(obj.w||100)-8), y:obj.y+((obj.h||60)/2)-4, width:8, height:8, fill:strokeColor, stroke:'white', strokeWidth:1, style:{cursor:'e-resize'}, onMouseDown:function(e: any){ startResize(e,ann.id,idx,'e'); } }),
                 React.createElement('rect', { x:obj.x+((obj.w||100)/2)-4, y:(obj.y+(obj.h||60)-8), width:8, height:8, fill:strokeColor, stroke:'white', strokeWidth:1, style:{cursor:'s-resize'}, onMouseDown:function(e: any){ startResize(e,ann.id,idx,'s'); } })
               );
             }
-            if (obj.type === 'highlight') {
-              return React.createElement('rect', {
-                key: idx, x: obj.x, y: obj.y, width: obj.w, height: obj.h,
-                fill: fillColor, style: { mixBlendMode: 'multiply', pointerEvents: 'none' },
-              });
-            }
-            if (obj.type === 'draw') {
-              return React.createElement('path', {
-                key: idx, d: obj.path,
-                fill: 'none', stroke: strokeColor, strokeWidth: 3,
-                strokeLinecap: 'round', strokeLinejoin: 'round',
-                style: { pointerEvents: 'none' },
-              });
-            }
+            if (obj.type === 'highlight') return React.createElement('rect', { key: idx, x: obj.x, y: obj.y, width: obj.w, height: obj.h, fill: fillColor, style: { mixBlendMode: 'multiply', pointerEvents: 'none' } });
+            if (obj.type === 'draw') return React.createElement('path', { key: idx, d: obj.path, fill: 'none', stroke: strokeColor, strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', style: { pointerEvents: 'none' } });
             return null;
           })
         );
       }),
-      isRectDrawing && rectCurrent ? React.createElement('rect', {
-        x: rectCurrent.x, y: rectCurrent.y, width: rectCurrent.w, height: rectCurrent.h,
-        fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'), strokeWidth: 2,
-        strokeDasharray: '5,5', pointerEvents: 'none',
-      }) : null,
-      isDrawing && currentPath ? React.createElement('path', {
-        d: currentPath, fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'),
-        strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none',
-      }) : null
+      isRectDrawing && rectCurrent ? React.createElement('rect', { x: rectCurrent.x, y: rectCurrent.y, width: rectCurrent.w, height: rectCurrent.h, fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'), strokeWidth: 2, strokeDasharray: '5,5', pointerEvents: 'none' }) : null,
+      isDrawing && currentPath ? React.createElement('path', { d: currentPath, fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'), strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none' }) : null
     ) : null,
 
     // LAYER 4: Sticky Notes — toggled by showAnnotations
-    showAnnotations ? React.createElement('div', {
-      style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:4 },
-    },
+    showAnnotations ? React.createElement('div', { style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:4 } },
       annotations.filter(function(a: Annotation) { return a.type==='comment' && (a.page===pageNum || a.page===0); }).map(function(note: Annotation) {
         var isEditing = editingNoteId === note.id;
         var noteColor = note.color || color;
         var bgColor = noteColor.replace(/[\d.]+\)$/, '0.35)');
         var borderColor = noteColor.replace(/[\d.]+\)$/, '0.8)');
-
         return React.createElement('div', {
           key: note.id,
-          style: {
-            position: 'absolute', top: (note.y||0)+'px', left: (note.x||0)+'px',
-            background: bgColor,
-            border: '2px solid '+borderColor,
-            borderRadius: '2px 8px 8px 8px', padding: '4px 8px',
-            fontSize: '11px', fontFamily: 'sans-serif', color: '#1a1a1a',
-            pointerEvents: 'auto', maxWidth: '200px', minWidth: '60px',
-            boxShadow: '1px 2px 4px rgba(0,0,0,0.15)', zIndex: 5, cursor: 'move',
-          },
+          style: { position: 'absolute', top: (note.y||0)+'px', left: (note.x||0)+'px', background: bgColor, border: '2px solid '+borderColor, borderRadius: '2px 8px 8px 8px', padding: '4px 8px', fontSize: '11px', fontFamily: 'sans-serif', color: '#1a1a1a', pointerEvents: 'auto', maxWidth: '200px', minWidth: '60px', boxShadow: '1px 2px 4px rgba(0,0,0,0.15)', zIndex: 5, cursor: 'move' },
           onMouseDown: function(e: any) { if(!isEditing) startDrag(e, note.id, 0); },
           onDoubleClick: function(e: any) { e.stopPropagation(); setEditingNoteId(note.id); setEditingNoteText(note.comment||''); },
         },
           isEditing
-            ? React.createElement('textarea', {
-                value: editingNoteText,
-                onChange: function(e: any) { setEditingNoteText(e.target.value); },
-                style: { width:'100%', minHeight:'40px', border:'none', outline:'none', resize:'vertical', fontSize:'11px', fontFamily:'sans-serif', color:'#1a1a1a', background:'transparent' },
-                autoFocus: true,
-                onBlur: function() { saveNoteEdit(note.id); },
-                onKeyDown: function(e: any) { if(e.key==='Escape') setEditingNoteId(null); if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); saveNoteEdit(note.id); } },
-              })
-            : React.createElement('div', { style: { whiteSpace:'pre-wrap', wordBreak:'break-word', minHeight:'16px' } },
-                note.comment || React.createElement('span', { style: { color:'#666', fontStyle:'italic' } }, 'Double-click to edit')
-              )
+            ? React.createElement('textarea', { value: editingNoteText, onChange: function(e: any) { setEditingNoteText(e.target.value); }, style: { width:'100%', minHeight:'40px', border:'none', outline:'none', resize:'vertical', fontSize:'11px', fontFamily:'sans-serif', color:'#1a1a1a', background:'transparent' }, autoFocus: true, onBlur: function() { saveNoteEdit(note.id); }, onKeyDown: function(e: any) { if(e.key==='Escape') setEditingNoteId(null); if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); saveNoteEdit(note.id); } } })
+            : React.createElement('div', { style: { whiteSpace:'pre-wrap', wordBreak:'break-word', minHeight:'16px' } }, note.comment || React.createElement('span', { style: { color:'#666', fontStyle:'italic' } }, 'Double-click to edit'))
         );
       })
     ) : null,
 
     // Page label
-    React.createElement('div', {
-      style: { position:'absolute', bottom:'8px', right:'12px', background:'rgba(0,0,0,0.6)', color:'white', padding:'2px 8px', borderRadius:'4px', fontSize:'0.7rem', pointerEvents:'none', zIndex:10 },
-    }, 'Page '+pageNum)
+    React.createElement('div', { style: { position:'absolute', bottom:'8px', right:'12px', background:'rgba(0,0,0,0.6)', color:'white', padding:'2px 8px', borderRadius:'4px', fontSize:'0.7rem', pointerEvents:'none', zIndex:10 } }, 'Page '+pageNum)
   );
 }
