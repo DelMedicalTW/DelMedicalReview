@@ -1,5 +1,4 @@
 import { Annotation, AnnotationStatus, AnnotationVersion, AnnotationThreadReply, AnnotationAnchor } from './types';
-import { fabric } from 'fabric';
 
 export function nextStatus(status: AnnotationStatus): AnnotationStatus {
   if (status === 'draft') return 'in_review';
@@ -9,24 +8,30 @@ export function nextStatus(status: AnnotationStatus): AnnotationStatus {
   return status;
 }
 
+// FIXED: Takes SVG annotation objects instead of Fabric canvas
 export function createVersion(
-  fc: fabric.Canvas,
+  objects: any[],
   reviewer: string,
-  ann?: Annotation
+  annType?: string,
+  annId?: string
 ): AnnotationVersion {
-  var objects = fc.getObjects();
   var serialized: any[] = [];
   for (var i = 0; i < objects.length; i++) {
-    var d = objects[i].toJSON();
-    (d as any)._annType = ann ? ann.type : 'drawing';
-    (d as any)._annotationId = ann ? ann.id : '';
-    serialized.push(d);
+    var obj = objects[i];
+    var copy: any = {};
+    if (obj.type === 'draw') copy = { type: 'draw', path: obj.path };
+    else if (obj.type === 'rectangle') copy = { type: 'rectangle', x: obj.x, y: obj.y, w: obj.w, h: obj.h };
+    else if (obj.type === 'highlight') copy = { type: 'highlight', x: obj.x, y: obj.y, w: obj.w, h: obj.h };
+    else if (obj.type === 'note') copy = { type: 'note', x: obj.x, y: obj.y, text: obj.text };
+    else copy = obj;
+    copy._annType = annType || 'drawing';
+    copy._annotationId = annId || '';
+    serialized.push(copy);
   }
   return {
     id: 'ver-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
     timestamp: new Date().toISOString(),
     updatedBy: reviewer || 'Anonymous',
-    comment: ann ? ann.comment : undefined,
     objects: serialized,
   };
 }
@@ -61,7 +66,14 @@ export function getLatestVersion(ann: Annotation): AnnotationVersion {
   if (ann.versions && ann.versions.length > 0 && ann.currentVersion >= 0) {
     return ann.versions[ann.currentVersion] || ann.versions[ann.versions.length - 1];
   }
-  return { id: '', timestamp: ann.timestamp, objects: ann.objects, updatedBy: ann.reviewer };
+  // Fallback: return a synthetic version from the annotation's own objects
+  return {
+    id: 'ver-original',
+    timestamp: ann.timestamp,
+    objects: ann.objects || [],
+    updatedBy: ann.reviewer,
+    comment: ann.comment,
+  };
 }
 
 export function buildAnchor(
@@ -83,28 +95,26 @@ export function buildAnchor(
   return { page: pageNum, rects: result, textSnippet: text };
 }
 
-export function drawAnchor(
+// FIXED: Returns SVG element props instead of using Fabric
+export function drawAnchorElements(
   ann: Annotation,
-  fc: fabric.Canvas,
-  tlRect: DOMRect
-): void {
-  if (!ann.anchor || !ann.anchor.rects) return;
+  containerWidth: number,
+  containerHeight: number
+): Array<{ x: number; y: number; w: number; h: number; color: string }> {
+  if (!ann.anchor || !ann.anchor.rects) return [];
+  var result: Array<{ x: number; y: number; w: number; h: number; color: string }> = [];
   var rects = ann.anchor.rects;
   for (var i = 0; i < rects.length; i++) {
     var r = rects[i];
-    var rect = new fabric.Rect({
-      left: r.x * fc.getWidth(),
-      top: r.y * fc.getHeight(),
-      width: r.w * fc.getWidth(),
-      height: r.h * fc.getHeight(),
-      fill: ann.color,
-      opacity: 0.4,
-      selectable: false,
-      evented: false,
+    result.push({
+      x: r.x * containerWidth,
+      y: r.y * containerHeight,
+      w: r.w * containerWidth,
+      h: r.h * containerHeight,
+      color: ann.color,
     });
-    fc.add(rect);
   }
-  fc.renderAll();
+  return result;
 }
 
 export function createAnnotation(
