@@ -1,7 +1,11 @@
 import { PROXY, STORAGE_KEY, SCHEMA_VERSION } from '../core/constants';
 import { Annotation } from '../core/types';
 
+// Store annotations in the app repo, not the PDF source repo
+var ANNOTATIONS_REPO_OWNER = 'DelMedicalTW';
+var ANNOTATIONS_REPO_NAME = 'DelMedicalReview';
 var ANNOTATIONS_PATH = 'annotations';
+var ANNOTATIONS_API_BASE = 'https://api.github.com/repos/' + ANNOTATIONS_REPO_OWNER + '/' + ANNOTATIONS_REPO_NAME;
 
 export function saveLocal(annotations: Record<string, Annotation[]>): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(annotations)); } catch(e) {}
@@ -12,7 +16,6 @@ export function loadLocal(): Record<string, Annotation[]> {
 }
 
 export async function saveToGitHub(pdfName: string, annotations: Annotation[], reviewer: string): Promise<void> {
-  // Skip if no annotations to save
   if (!annotations || annotations.length === 0) return;
 
   var safe = pdfName.replace(/[^a-zA-Z0-9_.-]/g, '_');
@@ -31,7 +34,7 @@ export async function saveToGitHub(pdfName: string, annotations: Annotation[], r
   for (var i = 0; i < bytes.length; i++) { binary += String.fromCharCode(bytes[i]); }
   var content = btoa(binary);
 
-  // Step 1: Try to get existing file SHA
+  // Step 1: Check if file exists in DelMedicalReview repo
   var existingSha: string | null = null;
   try {
     var checkRes = await fetch(PROXY + '/contents/' + fp, {
@@ -41,26 +44,22 @@ export async function saveToGitHub(pdfName: string, annotations: Annotation[], r
       var checkData = await checkRes.json();
       existingSha = checkData.sha;
     }
-    // 404 means file doesn't exist yet — that's fine, we'll create it
   } catch(e) {
-    // Network error — skip this sync attempt
     console.warn('GitHub check failed:', e);
     return;
   }
 
-  // Step 2: Build the request body
+  // Step 2: Build request body
   var body: any = {
     message: 'Update annotations for ' + pdfName,
     content: content,
-    branch: 'master',
+    branch: 'main',
   };
-
-  // Only include SHA if the file already exists (for updates)
   if (existingSha) {
     body.sha = existingSha;
   }
 
-  // Step 3: Create or update the file
+  // Step 3: Create or update
   try {
     var res = await fetch(PROXY + '/contents/' + fp, {
       method: 'PUT',
@@ -70,10 +69,8 @@ export async function saveToGitHub(pdfName: string, annotations: Annotation[], r
       },
       body: JSON.stringify(body),
     });
-
     if (!res.ok) {
       var err = await res.json().catch(function() { return {}; });
-      // Only log if it's not a 404 (404 on PUT with no SHA means the proxy issue)
       if (res.status !== 404) {
         console.warn('GitHub sync failed:', res.status, err.message || 'Unknown error');
       }
@@ -90,10 +87,7 @@ export async function loadFromGitHub(pdfName: string): Promise<Annotation[]> {
     var res = await fetch(PROXY + '/contents/' + fp, {
       headers: { Accept: 'application/vnd.github.v3+json' },
     });
-    if (!res.ok) {
-      // 404 means no annotations yet — return empty
-      return [];
-    }
+    if (!res.ok) return [];
     var data = await res.json();
     if (data.content && data.encoding === 'base64') {
       var decoded = atob(data.content);
