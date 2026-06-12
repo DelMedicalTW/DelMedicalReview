@@ -68,7 +68,7 @@ export function PdfViewer() {
 }
 
 // ============================================================
-// SVG PDF PAGE — Resizable rects, draggable annotations, proper selection
+// SVG PDF PAGE
 // ============================================================
 function SvgPdfPage(props: {
   pageNum: number; width: number; height: number;
@@ -89,6 +89,11 @@ function SvgPdfPage(props: {
   var [isDrawing, setIsDrawing] = useState(false);
   var [currentPath, setCurrentPath] = useState('');
   var [rendered, setRendered] = useState(false);
+  var [isRectDrawing, setIsRectDrawing] = useState(false);
+  var [rectStart, setRectStart] = useState<{ x: number; y: number } | null>(null);
+  var [rectCurrent, setRectCurrent] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  var [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  var [editingNoteText, setEditingNoteText] = useState('');
   var [dragging, setDragging] = useState<{ annId: string; objIdx: number; type: string; startX: number; startY: number; origX: number; origY: number; origW?: number; origH?: number; handle?: string } | null>(null);
   var vpRef = useRef<any>(null);
   var toolRef = useRef(tool); toolRef.current = tool;
@@ -142,9 +147,13 @@ function SvgPdfPage(props: {
     return function() { cancelled = true; };
   }, [pdfDoc, pageNum, rendered]);
 
-  // FIXED: Text selection for highlight tool
+  // FIXED: Highlight only on mouseup, not during drag
+  var lastHighlightTime = useRef(0);
   var handleTextSelection = function() {
     if (toolRef.current !== 'highlight') return;
+    var now = Date.now();
+    if (now - lastHighlightTime.current < 300) return; // Debounce
+    lastHighlightTime.current = now;
     var sel = window.getSelection();
     var text = sel ? sel.toString().trim() : '';
     if (!text || !sel) return;
@@ -164,85 +173,114 @@ function SvgPdfPage(props: {
     var ann = createAnnotation(pageNum, 'highlight', reviewerRef.current, colorRef.current, {
       id: 'ver-' + Date.now(), timestamp: new Date().toISOString(), objects: objects, updatedBy: reviewerRef.current || 'Anonymous',
     }, anchor, text.substring(0, 100), text);
-    var newAnns = annotations.concat([ann]);
-    setAnnotations(newAnns);
+    setAnnotations(annotations.concat([ann]));
     dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: ann });
-    // Clear selection after creating highlight
     sel.removeAllRanges();
   };
 
-  // Click handler for shapes and notes
-  var handlePageClick = function(e: React.MouseEvent) {
+  // FIXED: Rectangle — click and drag to size
+  var handleMouseDown = function(e: React.MouseEvent) {
     if (dragging) return;
-    if (toolRef.current === 'select' || toolRef.current === 'draw' || toolRef.current === 'highlight') return;
     var rect = containerRef.current!.getBoundingClientRect();
     var x = e.clientX - rect.left;
     var y = e.clientY - rect.top;
 
     if (toolRef.current === 'rectangle') {
-      var newAnn = createAnnotation(pageNum, 'rectangle', reviewerRef.current, colorRef.current, {
-        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(), objects: [{ type: 'rectangle', x: x - 50, y: y - 30, w: 100, h: 60 }], updatedBy: reviewerRef.current || 'Anonymous',
-      });
+      setIsRectDrawing(true);
+      setRectStart({ x: x, y: y });
+      setRectCurrent({ x: x, y: y, w: 0, h: 0 });
+      return;
+    }
+    if (toolRef.current === 'draw') {
+      setIsDrawing(true);
+      setCurrentPath('M ' + x + ' ' + y);
+      return;
+    }
+    if (toolRef.current === 'comment') {
+      var newAnn = createAnnotation(pageNum, 'comment', reviewerRef.current, colorRef.current, {
+        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(), objects: [], updatedBy: reviewerRef.current || 'Anonymous',
+      }, undefined, '');
+      newAnn.x = Math.round(x);
+      newAnn.y = Math.round(y);
       setAnnotations(annotations.concat([newAnn]));
       dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn });
-    } else if (toolRef.current === 'comment') {
-      var comment = prompt('Add a note:');
-      if (!comment) return;
-      var newAnn2 = createAnnotation(pageNum, 'comment', reviewerRef.current, colorRef.current, {
-        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(), objects: [{ type: 'note', x: x, y: y, text: comment }], updatedBy: reviewerRef.current || 'Anonymous',
-      }, undefined, comment);
-      newAnn2.x = Math.round(x); newAnn2.y = Math.round(y);
-      setAnnotations(annotations.concat([newAnn2]));
-      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn2 });
+      // Auto-open for editing
+      setEditingNoteId(newAnn.id);
+      setEditingNoteText('');
+      return;
     }
   };
 
-  // Drawing handlers
-  var handleMouseDown = function(e: React.MouseEvent) {
-    if (toolRef.current !== 'draw') return;
-    setIsDrawing(true);
-    var rect = containerRef.current!.getBoundingClientRect();
-    setCurrentPath('M ' + (e.clientX - rect.left) + ' ' + (e.clientY - rect.top));
-  };
   var handleMouseMove = function(e: React.MouseEvent) {
+    var rect = containerRef.current!.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var y = e.clientY - rect.top;
+
+    // Rectangle drawing
+    if (isRectDrawing && rectStart) {
+      var left = Math.min(rectStart.x, x);
+      var top = Math.min(rectStart.y, y);
+      var w = Math.abs(x - rectStart.x);
+      var h = Math.abs(y - rectStart.y);
+      setRectCurrent({ x: left, y: top, w: w, h: h });
+      return;
+    }
+    // Moving / resizing
     if (dragging && dragging.type === 'move') {
-      var rect = containerRef.current!.getBoundingClientRect();
-      var dx = (e.clientX - rect.left) - dragging.startX;
-      var dy = (e.clientY - rect.top) - dragging.startY;
+      var dx = x - dragging.startX;
+      var dy = y - dragging.startY;
       var newAnns = annotations.slice();
       var ann = newAnns.find(function(a) { return a.id === dragging!.annId; });
-      if (ann && ann.objects && ann.objects[dragging.objIdx]) {
-        var obj = ann.objects[dragging.objIdx];
-        obj.x = dragging.origX + dx;
-        obj.y = dragging.origY + dy;
+      if (ann) {
+        if (ann.type === 'comment') { ann.x = (dragging.origX + dx); ann.y = (dragging.origY + dy); }
+        else if (ann.objects && ann.objects[dragging.objIdx]) {
+          ann.objects[dragging.objIdx].x = dragging.origX + dx;
+          ann.objects[dragging.objIdx].y = dragging.origY + dy;
+        }
         setAnnotations(newAnns);
       }
       return;
     }
     if (dragging && dragging.type === 'resize' && dragging.handle) {
-      var rect2 = containerRef.current!.getBoundingClientRect();
-      var dx2 = (e.clientX - rect2.left) - dragging.startX;
-      var dy2 = (e.clientY - rect2.top) - dragging.startY;
+      var dx2 = x - dragging.startX;
+      var dy2 = y - dragging.startY;
       var newAnns2 = annotations.slice();
       var ann2 = newAnns2.find(function(a) { return a.id === dragging!.annId; });
       if (ann2 && ann2.objects && ann2.objects[dragging.objIdx]) {
-        var obj2 = ann2.objects[dragging.objIdx];
-        if (dragging.handle === 'se') { obj2.w = Math.max(20, (dragging.origW || 100) + dx2); obj2.h = Math.max(20, (dragging.origH || 60) + dy2); }
-        if (dragging.handle === 'e') { obj2.w = Math.max(20, (dragging.origW || 100) + dx2); }
-        if (dragging.handle === 's') { obj2.h = Math.max(20, (dragging.origH || 60) + dy2); }
+        var obj = ann2.objects[dragging.objIdx];
+        if (dragging.handle === 'se') { obj.w = Math.max(20, (dragging.origW || 100) + dx2); obj.h = Math.max(20, (dragging.origH || 60) + dy2); }
+        if (dragging.handle === 'e') { obj.w = Math.max(20, (dragging.origW || 100) + dx2); }
+        if (dragging.handle === 's') { obj.h = Math.max(20, (dragging.origH || 60) + dy2); }
         setAnnotations(newAnns2);
       }
       return;
     }
-    if (!isDrawing || toolRef.current !== 'draw') return;
-    var rect3 = containerRef.current!.getBoundingClientRect();
-    setCurrentPath(function(prev) { return prev + ' L ' + (e.clientX - rect3.left) + ' ' + (e.clientY - rect3.top); });
+    // Drawing
+    if (isDrawing && toolRef.current === 'draw') {
+      setCurrentPath(function(prev) { return prev + ' L ' + x + ' ' + y; });
+    }
   };
+
   var handleMouseUp = function(e: React.MouseEvent) {
+    // Finish rectangle
+    if (isRectDrawing && rectCurrent && rectCurrent.w > 5 && rectCurrent.h > 5) {
+      var newAnn = createAnnotation(pageNum, 'rectangle', reviewerRef.current, colorRef.current, {
+        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(),
+        objects: [{ type: 'rectangle', x: rectCurrent.x, y: rectCurrent.y, w: rectCurrent.w, h: rectCurrent.h }],
+        updatedBy: reviewerRef.current || 'Anonymous',
+      });
+      setAnnotations(annotations.concat([newAnn]));
+      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn });
+    }
+    setIsRectDrawing(false);
+    setRectStart(null);
+    setRectCurrent(null);
+
+    // Finish drag
     if (dragging) {
       var newAnns3 = annotations.slice();
       var ann3 = newAnns3.find(function(a) { return a.id === dragging!.annId; });
-      if (ann3) {
+      if (ann3 && ann3.type !== 'comment') {
         var version = createVersion(ann3.objects || [], reviewerRef.current, ann3.type, ann3.id);
         ann3.versions = (ann3.versions || []).concat([version]);
         ann3.currentVersion = (ann3.versions.length - 1);
@@ -252,95 +290,93 @@ function SvgPdfPage(props: {
       setDragging(null);
       return;
     }
-    if (!isDrawing) return;
-    setIsDrawing(false);
-    if (currentPath) {
-      var newAnn = createAnnotation(pageNum, 'drawing', reviewerRef.current, colorRef.current, {
-        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(), objects: [{ type: 'draw', path: currentPath }], updatedBy: reviewerRef.current || 'Anonymous',
+
+    // Finish drawing
+    if (isDrawing && currentPath) {
+      var newAnn2 = createAnnotation(pageNum, 'drawing', reviewerRef.current, colorRef.current, {
+        id: 'ver-' + Date.now(), timestamp: new Date().toISOString(),
+        objects: [{ type: 'draw', path: currentPath }],
+        updatedBy: reviewerRef.current || 'Anonymous',
       });
-      setAnnotations(annotations.concat([newAnn]));
-      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn });
+      setAnnotations(annotations.concat([newAnn2]));
+      dispatch({ type: 'ADD_ANNOTATION', pdf: currentPDF, payload: newAnn2 });
     }
+    setIsDrawing(false);
     setCurrentPath('');
   };
 
-  // Start dragging a shape or resize handle
+  // Start dragging
   var startDrag = function(e: React.MouseEvent, annId: string, objIdx: number, dragType: string, handle?: string) {
-    if (toolRef.current !== 'select') return;
     e.stopPropagation();
     var rect = containerRef.current!.getBoundingClientRect();
     var ann = annotations.find(function(a) { return a.id === annId; });
-    if (!ann || !ann.objects || !ann.objects[objIdx]) return;
-    var obj = ann.objects[objIdx];
-    setDragging({
-      annId: annId, objIdx: objIdx, type: dragType,
-      startX: e.clientX - rect.left, startY: e.clientY - rect.top,
-      origX: obj.x || 0, origY: obj.y || 0,
-      origW: obj.w, origH: obj.h, handle: handle,
-    });
+    if (!ann) return;
+    var ox = ann.type === 'comment' ? (ann.x || 0) : (ann.objects && ann.objects[objIdx] ? ann.objects[objIdx].x || 0 : 0);
+    var oy = ann.type === 'comment' ? (ann.y || 0) : (ann.objects && ann.objects[objIdx] ? ann.objects[objIdx].y || 0 : 0);
+    var ow = ann.objects && ann.objects[objIdx] ? ann.objects[objIdx].w : undefined;
+    var oh = ann.objects && ann.objects[objIdx] ? ann.objects[objIdx].h : undefined;
+    setDragging({ annId: annId, objIdx: objIdx, type: dragType, startX: e.clientX - rect.left, startY: e.clientY - rect.top, origX: ox, origY: oy, origW: ow, origH: oh, handle: handle });
   };
 
-  // Delete annotation on double-click in select mode
+  // Delete
   var handleDoubleClick = function(e: React.MouseEvent, annId: string) {
-    if (toolRef.current !== 'select') return;
     e.stopPropagation();
-    var newAnns = annotations.filter(function(a) { return a.id !== annId; });
-    setAnnotations(newAnns);
+    setAnnotations(annotations.filter(function(a) { return a.id !== annId; }));
     dispatch({ type: 'DELETE_ANNOTATION', pdf: currentPDF, id: annId });
   };
 
-  // Render annotation objects into SVG
+  // Save note edit
+  var saveNoteEdit = function(annId: string) {
+    var newAnns = annotations.slice();
+    var ann = newAnns.find(function(a) { return a.id === annId; });
+    if (ann) { ann.comment = editingNoteText; ann.objects = [{ type: 'note', x: ann.x || 0, y: ann.y || 0, text: editingNoteText }]; }
+    setAnnotations(newAnns);
+    dispatch({ type: 'UPDATE_ANNOTATION', pdf: currentPDF, id: annId, changes: { comment: editingNoteText } });
+    setEditingNoteId(null);
+  };
+
+  // SVG objects
   var renderAnnotationObjects = function(ann: Annotation) {
     var objs = (ann.versions && ann.versions.length > 0 && ann.currentVersion >= 0)
       ? ann.versions[ann.currentVersion].objects
       : ann.objects;
     if (!objs) return null;
+    var objColor = ann.color || color;
+    var fillColor = objColor.replace(/[\d.]+\)$/, '0.4)');
+    var strokeColor = objColor.replace(/[\d.]+\)$/, '1)');
 
     return objs.map(function(obj, idx) {
-      var objColor = ann.color || color;
-      var fillColor = objColor.replace(/[\d.]+\)$/, '0.4)');
-
-      // Resize handles for rectangles
       if (obj.type === 'rectangle') {
         return React.createElement('g', { key: ann.id + '-' + idx },
           React.createElement('rect', {
             x: obj.x, y: obj.y, width: obj.w || 100, height: obj.h || 60,
-            fill: 'none', stroke: objColor.replace(/[\d.]+\)$/, '1)'), strokeWidth: 2,
-            style: { cursor: toolRef.current === 'select' ? 'move' : 'default' },
+            fill: 'none', stroke: strokeColor, strokeWidth: 2,
+            style: { cursor: 'move' },
             onMouseDown: function(e: React.MouseEvent) { startDrag(e, ann.id, idx, 'move'); },
             onDoubleClick: function(e: React.MouseEvent) { handleDoubleClick(e, ann.id); },
           }),
-          // Resize handles
-          React.createElement('rect', { x: (obj.x + (obj.w || 100) - 8), y: (obj.y + (obj.h || 60) - 8), width: 8, height: 8, fill: 'white', stroke: objColor, strokeWidth: 1, style: { cursor: 'se-resize' }, onMouseDown: function(e: React.MouseEvent) { startDrag(e, ann.id, idx, 'resize', 'se'); } }),
-          React.createElement('rect', { x: (obj.x + (obj.w || 100) - 8), y: obj.y + ((obj.h || 60) / 2) - 4, width: 8, height: 8, fill: 'white', stroke: objColor, strokeWidth: 1, style: { cursor: 'e-resize' }, onMouseDown: function(e: React.MouseEvent) { startDrag(e, ann.id, idx, 'resize', 'e'); } }),
-          React.createElement('rect', { x: obj.x + ((obj.w || 100) / 2) - 4, y: (obj.y + (obj.h || 60) - 8), width: 8, height: 8, fill: 'white', stroke: objColor, strokeWidth: 1, style: { cursor: 's-resize' }, onMouseDown: function(e: React.MouseEvent) { startDrag(e, ann.id, idx, 'resize', 's'); } })
+          React.createElement('rect', { x: (obj.x + (obj.w || 100) - 8), y: (obj.y + (obj.h || 60) - 8), width: 8, height: 8, fill: strokeColor, stroke: 'white', strokeWidth: 1, style: { cursor: 'se-resize' }, onMouseDown: function(e: React.MouseEvent) { startDrag(e, ann.id, idx, 'resize', 'se'); } }),
+          React.createElement('rect', { x: (obj.x + (obj.w || 100) - 8), y: obj.y + ((obj.h || 60) / 2) - 4, width: 8, height: 8, fill: strokeColor, stroke: 'white', strokeWidth: 1, style: { cursor: 'e-resize' }, onMouseDown: function(e: React.MouseEvent) { startDrag(e, ann.id, idx, 'resize', 'e'); } }),
+          React.createElement('rect', { x: obj.x + ((obj.w || 100) / 2) - 4, y: (obj.y + (obj.h || 60) - 8), width: 8, height: 8, fill: strokeColor, stroke: 'white', strokeWidth: 1, style: { cursor: 's-resize' }, onMouseDown: function(e: React.MouseEvent) { startDrag(e, ann.id, idx, 'resize', 's'); } })
         );
       }
-
-      // Highlights
       if (obj.type === 'highlight') {
-        return React.createElement('rect', {
-          key: ann.id + '-' + idx,
-          x: obj.x, y: obj.y, width: obj.w, height: obj.h,
-          fill: fillColor,
-          style: { mixBlendMode: 'multiply', pointerEvents: 'none' },
-        });
+        return React.createElement('rect', { key: ann.id + '-' + idx, x: obj.x, y: obj.y, width: obj.w, height: obj.h, fill: fillColor, style: { mixBlendMode: 'multiply', pointerEvents: 'none' } });
       }
-
-      // Drawings
       if (obj.type === 'draw') {
-        return React.createElement('path', {
-          key: ann.id + '-' + idx,
-          d: obj.path,
-          fill: 'none', stroke: objColor.replace(/[\d.]+\)$/, '1)'), strokeWidth: 3,
-          strokeLinecap: 'round', strokeLinejoin: 'round',
-          style: { pointerEvents: 'none' },
-        });
+        return React.createElement('path', { key: ann.id + '-' + idx, d: obj.path, fill: 'none', stroke: strokeColor, strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', style: { pointerEvents: 'none' } });
       }
-
       return null;
     });
   };
+
+  // Cursor style based on tool
+  var cursorStyle = 'default';
+  if (tool === 'select') cursorStyle = 'default';
+  if (tool === 'highlight') cursorStyle = 'text';
+  if (tool === 'draw') cursorStyle = 'crosshair';
+  if (tool === 'rectangle') cursorStyle = 'crosshair';
+  if (tool === 'comment') cursorStyle = 'cell';
 
   return React.createElement('div', {
     ref: containerRef,
@@ -348,10 +384,9 @@ function SvgPdfPage(props: {
     style: {
       position: 'relative', width: width + 'px', height: height + 'px',
       margin: '0 auto', boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
-      background: 'white', flexShrink: 0,
+      background: 'white', flexShrink: 0, cursor: cursorStyle,
       userSelect: tool === 'select' || tool === 'highlight' ? 'text' : 'none',
     },
-    onClick: handlePageClick,
     onMouseDown: handleMouseDown,
     onMouseMove: handleMouseMove,
     onMouseUp: handleMouseUp,
@@ -360,7 +395,7 @@ function SvgPdfPage(props: {
     // LAYER 1: PDF Canvas
     React.createElement('canvas', { ref: canvasRef, style: { display: 'block', pointerEvents: 'none' } }),
 
-    // LAYER 2: Text selection layer
+    // LAYER 2: Text selection
     React.createElement('div', {
       ref: textLayerRef,
       style: {
@@ -372,42 +407,63 @@ function SvgPdfPage(props: {
       onMouseUp: handleTextSelection,
     }),
 
-    // LAYER 3: SVG annotation layer
+    // LAYER 3: SVG
     React.createElement('svg', {
-      style: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 3, pointerEvents: tool === 'select' || tool === 'rectangle' || tool === 'comment' ? 'auto' : 'none' },
+      style: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 3, pointerEvents: 'auto' },
     },
       annotations.map(function(ann) { return renderAnnotationObjects(ann); }),
-      isDrawing ? React.createElement('path', { d: currentPath, fill: 'none', stroke: color.replace(/[\d.]+\)$/, '1)'), strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none' }) : null
+      // Live rectangle preview
+      isRectDrawing && rectCurrent ? React.createElement('rect', { x: rectCurrent.x, y: rectCurrent.y, width: rectCurrent.w, height: rectCurrent.h, fill: 'none', stroke: color.replace(/[\d.]+\)$/, '1)'), strokeWidth: 2, strokeDasharray: '5,5', pointerEvents: 'none' }) : null,
+      // Live drawing preview
+      isDrawing && currentPath ? React.createElement('path', { d: currentPath, fill: 'none', stroke: color.replace(/[\d.]+\)$/, '1)'), strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none' }) : null
     ),
 
-    // LAYER 3.5: HTML Notes — FIXED: use annotation color
+    // LAYER 4: Sticky Notes
     React.createElement('div', {
       style: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 4 },
     },
       annotations.filter(function(a) { return a.type === 'comment'; }).map(function(note) {
+        var isEditing = editingNoteId === note.id;
         var noteColor = note.color || color;
-        var bgColor = noteColor.replace(/[\d.]+\)$/, '0.15)');
-        var borderColor = noteColor.replace(/[\d.]+\)$/, '1)');
+        var bgColor = '#fef9c3';
+        var borderColor = '#ca8a04';
+
         return React.createElement('div', {
           key: note.id,
           style: {
-            position: 'absolute',
-            top: (note.y || 0) + 'px', left: (note.x || 0) + 'px',
+            position: 'absolute', top: (note.y || 0) + 'px', left: (note.x || 0) + 'px',
             background: bgColor, border: '2px solid ' + borderColor,
-            padding: '6px 8px', borderRadius: '6px', fontSize: '12px',
-            pointerEvents: tool === 'select' ? 'auto' : 'none',
-            maxWidth: '180px', boxShadow: '2px 2px 8px rgba(0,0,0,0.2)',
-            zIndex: 5, cursor: tool === 'select' ? 'move' : 'default',
+            borderRadius: '2px 8px 8px 8px', padding: '4px 8px',
+            fontSize: '11px', fontFamily: 'sans-serif', color: '#1a1a1a',
+            pointerEvents: 'auto', maxWidth: '200px', minWidth: '60px',
+            boxShadow: '1px 2px 4px rgba(0,0,0,0.15)',
+            zIndex: 5, cursor: 'move',
           },
           onMouseDown: function(e: React.MouseEvent) {
-            if (tool !== 'select') return;
-            var ann = annotations.find(function(a) { return a.id === note.id; });
-            if (!ann) return;
-            var objIdx = 0;
-            startDrag(e, note.id, objIdx, 'move');
+            if (isEditing) return;
+            startDrag(e, note.id, 0, 'move');
           },
-          onDoubleClick: function(e: React.MouseEvent) { handleDoubleClick(e, note.id); },
-        }, note.comment);
+          onDoubleClick: function(e: React.MouseEvent) {
+            e.stopPropagation();
+            setEditingNoteId(note.id);
+            setEditingNoteText(note.comment || '');
+          },
+        },
+          isEditing
+            ? React.createElement('div', null,
+                React.createElement('textarea', {
+                  value: editingNoteText,
+                  onChange: function(e: any) { setEditingNoteText(e.target.value); },
+                  style: { width: '100%', minHeight: '40px', border: 'none', outline: 'none', resize: 'vertical', fontSize: '11px', fontFamily: 'sans-serif', color: '#1a1a1a', background: 'transparent' },
+                  autoFocus: true,
+                  onBlur: function() { saveNoteEdit(note.id); },
+                  onKeyDown: function(e: any) { if (e.key === 'Escape') { setEditingNoteId(null); } if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveNoteEdit(note.id); } },
+                })
+              )
+            : React.createElement('div', { style: { whiteSpace: 'pre-wrap', wordBreak: 'break-word', minHeight: '16px' } },
+                note.comment || React.createElement('span', { style: { color: '#999', fontStyle: 'italic' } }, 'Double-click to edit')
+              )
+        );
       })
     ),
 
