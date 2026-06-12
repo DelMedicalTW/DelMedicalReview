@@ -20,7 +20,7 @@ export function Toolbar() {
   return React.createElement('div', {
     className: 'bg-base-200 border-b border-base-300 px-3 py-2 flex items-center gap-1 flex-shrink-0 flex-wrap',
   },
-    // Tool buttons — NO join class, each button is separate
+    // Tool buttons
     TOOLS.map(function(t) {
       var isActive = state.tool === t.id;
       return React.createElement('button', {
@@ -55,13 +55,25 @@ export function Toolbar() {
     // Spacer
     React.createElement('div', { className: 'flex-1' }),
 
-    // Undo
-    React.createElement('button', { className: 'btn btn-ghost btn-sm', title: 'Undo' },
+    // Undo — wired to dispatch
+    React.createElement('button', {
+      className: 'btn btn-ghost btn-sm',
+      title: 'Undo last annotation',
+      onClick: function() { dispatch({ type: 'UNDO_LAST' }); },
+    },
       React.createElement(Undo2, { className: 'w-4 h-4' })
     ),
 
-    // Clear page
-    React.createElement('button', { className: 'btn btn-ghost btn-sm text-error', title: 'Clear Page' },
+    // Clear page — wired to dispatch
+    React.createElement('button', {
+      className: 'btn btn-ghost btn-sm text-error',
+      title: 'Clear all annotations on current page',
+      onClick: function() {
+        if (window.confirm('Remove all annotations on the current page?')) {
+          dispatch({ type: 'CLEAR_CURRENT_PAGE' });
+        }
+      },
+    },
       React.createElement(Trash2, { className: 'w-4 h-4' })
     )
   );
