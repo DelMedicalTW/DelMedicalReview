@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAppState } from '../../state/AnnotationContext';
+import { AnnotationStatus } from '../../core/types';
 import { MessageSquareText, Inbox, X, ChevronDown, User, Highlighter, Pen, Square, StickyNote, MessageCircle, Plus } from 'lucide-react';
 
 var TYPE_ICONS: Record<string, React.FC<{className?: string}>> = {
@@ -34,15 +35,20 @@ export function AnnotationSidebar() {
       return new Date(b.timestamp).getTime()-new Date(a.timestamp).getTime();
     });
 
-  var handleDelete = function(id: string) { dispatch({ type:'DELETE_ANNOTATION', pdf:state.currentPDF, id:id }); };
-  var handleStatus = function(id: string, st: string) { dispatch({ type:'UPDATE_ANNOTATION', pdf:state.currentPDF, id:id, changes:{ status:st } }); };
+  var handleDelete = function(id: string) {
+    dispatch({ type:'DELETE_ANNOTATION', pdf:state.currentPDF, id:id });
+  };
 
-  // Add general comment
+  var handleStatus = function(id: string, st: AnnotationStatus) {
+    dispatch({ type:'UPDATE_ANNOTATION', pdf:state.currentPDF, id:id, changes:{ status: st } });
+  };
+
   var addGeneralComment = function() {
     if(!newComment.trim()) return;
     dispatch({ type:'ADD_ANNOTATION', pdf:state.currentPDF, payload: {
-      id: 'ann-'+Date.now(), type:'comment', page:0, status:'draft', comment:newComment.trim(),
-      reviewer: state.reviewer||'Anonymous', timestamp: new Date().toISOString(), color: state.color,
+      id: 'ann-'+Date.now(), type:'comment', page:0, status:'draft' as AnnotationStatus,
+      comment:newComment.trim(), reviewer: state.reviewer||'Anonymous',
+      timestamp: new Date().toISOString(), color: state.color,
       objects:[], versions:[], currentVersion:0,
     }});
     setNewComment('');
@@ -56,7 +62,6 @@ export function AnnotationSidebar() {
       React.createElement('span', { className: 'badge badge-sm' }, String(filtered.length))
     ),
 
-    // Reviewer + Filters
     React.createElement('div', { className: 'p-2 border-b border-base-300 flex-shrink-0 space-y-1' },
       React.createElement('label', { className: 'input input-bordered input-sm flex items-center gap-2' },
         React.createElement(User, { className: 'w-3 h-3 text-base-content/40' }),
@@ -75,23 +80,22 @@ export function AnnotationSidebar() {
           React.createElement('option', { value:'draft' }, 'Draft'),
           React.createElement('option', { value:'in_review' }, 'In Review'),
           React.createElement('option', { value:'approved' }, 'Approved'),
+          React.createElement('option', { value:'rejected' }, 'Rejected'),
           React.createElement('option', { value:'resolved' }, 'Resolved')
         ),
         React.createElement('select', { className:'select select-bordered select-xs flex-1', value:sortBy, onChange:function(e: any){ setSortBy(e.target.value); } },
-          React.createElement('option', { value:'page-asc' }, 'Page ↑'),
-          React.createElement('option', { value:'page-desc' }, 'Page ↓'),
+          React.createElement('option', { value:'page-asc' }, 'Page \u2191'),
+          React.createElement('option', { value:'page-desc' }, 'Page \u2193'),
           React.createElement('option', { value:'newest' }, 'Newest')
         )
       )
     ),
 
-    // General comment box
     React.createElement('div', { className: 'p-2 border-b border-base-300 flex-shrink-0 flex gap-1' },
       React.createElement('input', { type:'text', className:'input input-bordered input-sm flex-1', placeholder:'Add a general comment...', value:newComment, onChange:function(e: any){ setNewComment(e.target.value); }, onKeyDown:function(e: any){ if(e.key==='Enter') addGeneralComment(); } }),
       React.createElement('button', { className:'btn btn-primary btn-sm', onClick:addGeneralComment }, React.createElement(Plus, { className:'w-4 h-4' }))
     ),
 
-    // List
     React.createElement('div', { className: 'flex-1 overflow-y-auto p-3 flex flex-col gap-2' },
       filtered.length===0
         ? React.createElement('div', { className:'text-center py-8 text-base-content/40 text-sm' },
