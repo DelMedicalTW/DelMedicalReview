@@ -14,7 +14,7 @@ export function MainLayout() {
       <nav className="navbar bg-base-200 border-b border-base-300 px-4 py-2 flex-shrink-0 z-20 min-h-0 gap-2">
         <div className="flex-1 flex items-center gap-3 min-w-0">
           <FileText className="w-5 h-5 text-primary flex-shrink-0" />
-          <span className="text-primary font-bold text-lg hidden sm:inline">Del Medical</span>
+          <span className="text-primary font-bold text-lg hidden sm:inline">PDF Review Portal</span>
           <span className="text-sm text-base-content/50 truncate hidden md:inline">
             {state.currentPDF || 'PDF Review Portal'}
           </span>
