@@ -27,6 +27,9 @@ type Action =
   | { type: 'UPDATE_ANNOTATION'; pdf: string; id: string; changes: Partial<Annotation> }
   | { type: 'TOGGLE_BROWSER' }
   | { type: 'TOGGLE_SIDEBAR' };
+  | { type: 'UPDATE_STATUS'; pdf: string; id: string; status: AnnotationStatus }
+  | { type: 'ADD_REPLY'; pdf: string; id: string; message: string; author: string }
+  | { type: 'ADD_VERSION'; pdf: string; id: string; version: AnnotationVersion }
 
 function generateId(): string {
   return 'ann-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6);
