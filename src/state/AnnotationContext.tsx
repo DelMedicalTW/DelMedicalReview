@@ -13,6 +13,7 @@ export interface AppState {
   showBrowser: boolean;
   showSidebar: boolean;
   reviewer: string;
+  showAnnotations: boolean;
 }
 
 type Action =
@@ -28,6 +29,7 @@ type Action =
   | { type: 'UPDATE_ANNOTATION'; pdf: string; id: string; changes: Partial<Annotation> }
   | { type: 'TOGGLE_BROWSER' }
   | { type: 'TOGGLE_SIDEBAR' }
+  | { type: 'TOGGLE_ANNOTATIONS' }
   | { type: 'UPDATE_STATUS'; pdf: string; id: string; status: AnnotationStatus }
   | { type: 'ADD_REPLY'; pdf: string; id: string; message: string; author: string }
   | { type: 'ADD_VERSION'; pdf: string; id: string; version: AnnotationVersion }
@@ -49,6 +51,7 @@ var initialState: AppState = {
   showBrowser: true,
   showSidebar: true,
   reviewer: localStorage.getItem('delmed-reviewer') || '',
+  showAnnotations: true,
 };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -68,6 +71,12 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, reviewer: action.payload };
     case 'SET_ANNOTATIONS':
       return { ...state, annotations: { ...state.annotations, [action.pdf]: action.payload } };
+    case 'TOGGLE_BROWSER':
+      return { ...state, showBrowser: !state.showBrowser };
+    case 'TOGGLE_SIDEBAR':
+      return { ...state, showSidebar: !state.showSidebar };
+    case 'TOGGLE_ANNOTATIONS':
+      return { ...state, showAnnotations: !state.showAnnotations };
     case 'UNDO_LAST': {
       var pdfU = state.currentPDF;
       var currentU = state.annotations[pdfU] || [];
@@ -166,10 +175,6 @@ function reducer(state: AppState, action: Action): AppState {
         },
       };
     }
-    case 'TOGGLE_BROWSER':
-      return { ...state, showBrowser: !state.showBrowser };
-    case 'TOGGLE_SIDEBAR':
-      return { ...state, showSidebar: !state.showSidebar };
     default:
       return state;
   }
