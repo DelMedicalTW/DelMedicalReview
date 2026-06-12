@@ -98,6 +98,53 @@ function reducer(state: AppState, action: Action): AppState {
       return state;
   }
 }
+    case 'UPDATE_STATUS': {
+      var current = state.annotations[action.pdf] || [];
+      return {
+        ...state,
+        annotations: {
+          ...state.annotations,
+          [action.pdf]: current.map(function(a) {
+            if (a.id === action.id) return updateAnnotationStatus(a, action.status);
+            return a;
+          }),
+        },
+      };
+    }
+    case 'ADD_REPLY': {
+      var current = state.annotations[action.pdf] || [];
+      return {
+        ...state,
+        annotations: {
+          ...state.annotations,
+          [action.pdf]: current.map(function(a) {
+            if (a.id === action.id) return addReply(a, action.message, action.author);
+            return a;
+          }),
+        },
+      };
+    }
+    case 'ADD_VERSION': {
+      var current = state.annotations[action.pdf] || [];
+      return {
+        ...state,
+        annotations: {
+          ...state.annotations,
+          [action.pdf]: current.map(function(a) {
+            if (a.id === action.id) {
+              return {
+                ...a,
+                objects: action.version.objects,
+                versions: a.versions.concat([action.version]),
+                currentVersion: a.versions.length,
+                timestamp: action.version.timestamp,
+              };
+            }
+            return a;
+          }),
+        },
+      };
+    }
 
 const Ctx = createContext<{ state: AppState; dispatch: React.Dispatch<Action> } | null>(null);
 
