@@ -22,7 +22,6 @@ export function PdfViewer() {
 
   useEffect(function() { return function() { pageReadyRef.current.clear(); }; }, [state.currentPDFPath]);
 
-  // Load annotations from GitHub when PDF changes
   useEffect(function() {
     if (!state.currentPDF) return;
     loadFromGitHub(state.currentPDF).then(function(ghAnns) {
@@ -32,7 +31,6 @@ export function PdfViewer() {
     }).catch(function() {});
   }, [state.currentPDF]);
 
-  // Auto-save to GitHub when annotations change
   useEffect(function() {
     if (!state.currentPDF) return;
     var anns = state.annotations[state.currentPDF] || [];
@@ -146,7 +144,8 @@ function SvgPdfPage(props: {
             var it = textContent.items[t] as any; if (!it.str) continue;
             var tx = pdfjsLib.Util.transform(vp.transform, it.transform); var fh = Math.sqrt(tx[2]*tx[2]+tx[3]*tx[3]);
             var span = document.createElement('span'); span.textContent = it.str;
-            span.style.cssText = 'left:'+tx[4]+'px;top:'+(tx[5]-fh)+'px;font-size:'+fh+'px;position:absolute;color:transparent;white-space:pre;cursor:text;font-family:sans-serif;';
+            // FIX #3: Use near-transparent color instead of fully transparent for better browser selection
+            span.style.cssText = 'left:'+tx[4]+'px;top:'+(tx[5]-fh)+'px;font-size:'+fh+'px;position:absolute;color:rgba(0,0,0,0.01);white-space:pre;cursor:text;font-family:sans-serif;';
             tl.appendChild(span);
           }
         }
@@ -158,7 +157,9 @@ function SvgPdfPage(props: {
 
   var getPos = function(e: React.MouseEvent) { var r = containerRef.current!.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
 
+  // FIX #2: Guard mouse handlers — skip for select and highlight tools
   var handleMouseDown = function(e: React.MouseEvent) {
+    if (toolRef.current === 'select' || toolRef.current === 'highlight') return;
     var pos = getPos(e);
     if (toolRef.current === 'rectangle') { setIsRectDrawing(true); setRectStart(pos); setRectCurrent({ x: pos.x, y: pos.y, w: 0, h: 0 }); return; }
     if (toolRef.current === 'draw') { setIsDrawing(true); setCurrentPath('M '+pos.x+' '+pos.y); return; }
@@ -174,7 +175,9 @@ function SvgPdfPage(props: {
     }
   };
 
+  // FIX #2: Guard mouse move — skip for select and highlight tools
   var handleMouseMove = function(e: React.MouseEvent) {
+    if (toolRef.current === 'select' || toolRef.current === 'highlight') return;
     var pos = getPos(e);
     if (isRectDrawing && rectStart) {
       var left = Math.min(rectStart.x, pos.x); var top = Math.min(rectStart.y, pos.y);
@@ -209,6 +212,7 @@ function SvgPdfPage(props: {
   };
 
   var handleMouseUp = function(e: React.MouseEvent) {
+    if (toolRef.current === 'select' || toolRef.current === 'highlight') return;
     if (isRectDrawing && rectCurrent && rectCurrent.w > 5 && rectCurrent.h > 5) {
       var ann = createAnnotation(pageNum, 'rectangle', reviewerRef.current, colorRef.current, {
         id: 'ver-'+Date.now(), timestamp: new Date().toISOString(),
@@ -331,9 +335,12 @@ function SvgPdfPage(props: {
       },
     }),
 
-    // LAYER 3: SVG Annotations — toggled by showAnnotations
+    // LAYER 3: SVG Annotations — FIX #1 + #4: pointerEvents based on tool
     showAnnotations ? React.createElement('svg', {
-      style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', zIndex:3, pointerEvents:'auto' },
+      style: {
+        position:'absolute', top:0, left:0, width:'100%', height:'100%', zIndex:3,
+        pointerEvents: (tool === 'highlight' || tool === 'select') ? 'none' : 'auto',
+      },
     },
       annotations.filter(function(a: Annotation) { return a.page === pageNum || a.page === 0; }).map(function(ann: Annotation) {
         var objs = (ann.versions&&ann.versions.length>0&&ann.currentVersion>=0) ? ann.versions[ann.currentVersion].objects : ann.objects;
@@ -361,13 +368,13 @@ function SvgPdfPage(props: {
       isDrawing && currentPath ? React.createElement('path', { d: currentPath, fill: 'none', stroke: color.replace(/[\d.]+\)$/,'1)'), strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', pointerEvents: 'none' }) : null
     ) : null,
 
-    // LAYER 4: Sticky Notes — toggled by showAnnotations
+    // LAYER 4: Sticky Notes — toggled by showAnnotations, SOLID background
     showAnnotations ? React.createElement('div', { style: { position:'absolute', top:0, left:0, width:'100%', height:'100%', pointerEvents:'none', zIndex:4 } },
       annotations.filter(function(a: Annotation) { return a.type==='comment' && (a.page===pageNum || a.page===0); }).map(function(note: Annotation) {
         var isEditing = editingNoteId === note.id;
         var noteColor = note.color || color;
-        var bgColor = noteColor.replace(/[\d.]+\)$/, '0.35)');
-        var borderColor = noteColor.replace(/[\d.]+\)$/, '0.8)');
+        var bgColor = noteColor.replace(/[\d.]+\)$/, '1.0)');
+        var borderColor = noteColor.replace(/[\d.]+\)$/, '1.0)');
         return React.createElement('div', {
           key: note.id,
           style: { position: 'absolute', top: (note.y||0)+'px', left: (note.x||0)+'px', background: bgColor, border: '2px solid '+borderColor, borderRadius: '2px 8px 8px 8px', padding: '4px 8px', fontSize: '11px', fontFamily: 'sans-serif', color: '#1a1a1a', pointerEvents: 'auto', maxWidth: '200px', minWidth: '60px', boxShadow: '1px 2px 4px rgba(0,0,0,0.15)', zIndex: 5, cursor: 'move' },
